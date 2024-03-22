@@ -90,6 +90,16 @@ void CwlCompositor::create()
 	qunsetenv("QT_SCALE_FACTOR");
 	qputenv("WAYLAND_DISPLAY", socketName());
 
+	/*
+		Setting QSG_NO_VSYNC and QSG_RENDER_LOOP makes resizing QtQuick apps
+		much smoother. There is a QTBUG-51112 which MIGHT be related to our issue.
+		But the bug describes actually a slightly different issue.
+
+		Might also be the hwcomposer issue https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html
+	*/
+	qputenv("QSG_NO_VSYNC", QByteArray("1"));
+	qputenv("QSG_RENDER_LOOP", QByteArray("basic"));
+
 	QStringList args = QStringList();
 	args.append("-c");
 	args.append("cutie-home");

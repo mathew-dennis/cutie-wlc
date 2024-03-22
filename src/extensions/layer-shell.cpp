@@ -35,6 +35,8 @@ void LayerShellV1::zwlr_layer_shell_v1_get_layer_surface(
 LayerSurfaceV1::LayerSurfaceV1(wl_client *client, uint32_t id, int version)
 	: QtWaylandServer::zwlr_layer_surface_v1(client, id, version)
 {
+	connect(targetZoneAnim, &QVariantAnimation::valueChanged, this,
+		&LayerSurfaceV1::animationValueChanged);
 }
 
 void LayerSurfaceV1::zwlr_layer_surface_v1_set_size(Resource *resource,
@@ -53,7 +55,14 @@ void LayerSurfaceV1::zwlr_layer_surface_v1_set_anchor(Resource *resource,
 void LayerSurfaceV1::zwlr_layer_surface_v1_set_exclusive_zone(
 	Resource *resource, int32_t zone)
 {
-	new_ls_zone = zone;
+	if (zone < 0) {
+		new_ls_zone = zone;
+		return;
+	}
+
+	targetZoneAnim->setDuration(200);
+	targetZoneAnim->setEndValue(zone);
+	targetZoneAnim->start();
 }
 
 void LayerSurfaceV1::zwlr_layer_surface_v1_set_margin(Resource *resource,
@@ -137,4 +146,30 @@ void LayerSurfaceV1::onCommit()
 
 	if (dataChanged)
 		emit layerSurfaceDataChanged(this);
+}
+
+void LayerSurfaceV1::animationValueChanged(const QVariant &value)
+{
+	new_ls_zone = value.toInt();
+
+	/*
+		Need to call this, to update the position.
+
+		The animation happens internaly in the compositor,
+		the client might never call redraw in that time.
+	*/
+	onCommit();
+}
+
+int32_t LayerSurfaceV1::targetZone()
+{
+	return m_targetZone;
+}
+
+void LayerSurfaceV1::setTargetZone(int32_t targetZone)
+{
+	if (m_targetZone != targetZone) {
+		m_targetZone = targetZone;
+		emit targetZoneChanged(m_targetZone);
+	}
 }

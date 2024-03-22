@@ -6,6 +6,7 @@
 #include <QtWaylandCompositor/QWaylandCompositorExtensionTemplate>
 #include <QtWaylandCompositor/QWaylandCompositor>
 #include <QtWaylandCompositor/QWaylandSurface>
+#include <QPropertyAnimation>
 
 #include "qwayland-server-wlr-layer-shell-unstable-v1.h"
 
@@ -16,6 +17,7 @@ class LayerShellV1 : public QWaylandCompositorExtensionTemplate<LayerShellV1>,
 
 {
 	Q_OBJECT
+
     public:
 	LayerShellV1(QWaylandCompositor *compositor);
 	void initialize() override;
@@ -34,13 +36,15 @@ class LayerShellV1 : public QWaylandCompositorExtensionTemplate<LayerShellV1>,
 		const QString &scope) override;
 
     private:
-	QWaylandCompositor *m_compositor;
+	QWaylandCompositor *m_compositor = nullptr;
 };
 
 class LayerSurfaceV1
 	: public QWaylandCompositorExtensionTemplate<LayerSurfaceV1>,
 	  public QtWaylandServer::zwlr_layer_surface_v1 {
 	Q_OBJECT
+	Q_PROPERTY(int32_t targetZone READ targetZone WRITE setTargetZone NOTIFY targetZoneChanged)
+
     public:
 	LayerSurfaceV1(struct ::wl_client *client, uint32_t id, int version);
 	QWaylandSurface *surface = nullptr;
@@ -63,12 +67,24 @@ class LayerSurfaceV1
 
 	bool initialized = false;
 
+	int32_t targetZone();
+	void setTargetZone(int32_t targetZone);
+
     signals:
 	void layerSurfaceDestroyed(QWaylandSurface *surface);
 	void layerSurfaceDataChanged(LayerSurfaceV1 *surface);
+	void targetZoneChanged(int32_t targetZone);
 
     public slots:
 	void onCommit();
+
+	private slots:
+	void animationValueChanged(const QVariant &value);
+	
+    private:
+    int32_t m_targetZone;
+    QPropertyAnimation *targetZoneAnim =
+		new QPropertyAnimation(this, "targetZone", this);
 
     protected:
 	void zwlr_layer_surface_v1_set_size(Resource *resource, uint32_t width,
