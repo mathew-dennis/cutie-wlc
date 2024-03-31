@@ -119,6 +119,12 @@ void CwlCompositor::create()
 	args.append("env XDG_CURRENT_DESKTOP=GNOME /usr/libexec/feedbackd");
 	if (!QProcess::startDetached("bash", args))
 		qDebug() << "Failed to run";
+
+	args = QStringList();
+	args.append("-c");
+	args.append("loginctl activate");
+	if (!QProcess::startDetached("bash", args))
+		qDebug() << "Failed to run";
 }
 
 QList<CwlView *> CwlCompositor::getViews() const
