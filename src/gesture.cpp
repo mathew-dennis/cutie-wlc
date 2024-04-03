@@ -6,6 +6,9 @@ CwlGesture::CwlGesture(CwlCompositor *compositor, QSize screenSize)
 	, m_screenSize(screenSize)
 {
 	updateGestureRect();
+
+	connect(m_cwlcompositor, &CwlCompositor::scaleFactorChanged, this,
+		&CwlGesture::updateGestureRect);
 }
 
 CwlGesture::~CwlGesture()
