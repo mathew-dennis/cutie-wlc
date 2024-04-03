@@ -453,15 +453,20 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 					return false;
 			if ((-ev->points().first().globalPosition() +
 			     m_glwindow->gesture()->startingPoint())
-				    .y() > GESTURE_MINIMUM_THRESHOLD)
+				    .y() > GESTURE_MINIMUM_THRESHOLD) {
 				m_glwindow->gesture()->confirmGesture();
-			setLauncherPosition(qMin(
-				1.0,
-				1.0 - (ev->points().first().globalPosition().y() /
-					       scaleFactor() -
-				       m_workspace->outputGeometry().y()) /
-						m_workspace->outputGeometry()
-							.height()));
+				setLauncherPosition(qMin(
+					1.0,
+					1.0 - (ev->points().first()
+							       .globalPosition()
+							       .y() /
+						       scaleFactor() -
+					       m_workspace->outputGeometry()
+						       .y()) /
+							m_workspace
+								->outputGeometry()
+								.height()));
+			}
 			return true;
 		}
 
