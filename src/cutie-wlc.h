@@ -83,6 +83,7 @@ class CwlCompositor : public QWaylandCompositor {
     public slots:
 	void triggerRender();
 	void onToplevelDamaged(CwlView *view);
+	void onHideKeyboard();
 
     private slots:
 	void onXdgToplevelCreated(QWaylandXdgToplevel *toplevel,

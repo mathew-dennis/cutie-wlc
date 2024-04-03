@@ -74,6 +74,7 @@ class LayerSurfaceV1
 	void layerSurfaceDestroyed(QWaylandSurface *surface);
 	void layerSurfaceDataChanged(LayerSurfaceV1 *surface);
 	void targetZoneChanged(int32_t targetZone);
+	void hideKeyboard();
 
     public slots:
 	void onCommit();

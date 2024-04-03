@@ -41,6 +41,7 @@ void GlWindow::setDisplayOff(bool displayOff)
 		QGuiApplication::platformNativeInterface()
 			->nativeResourceForIntegration("displayoff");
 		m_cwlcompositor->setLauncherPosition(0.0);
+		m_cwlcompositor->onHideKeyboard();
 	}
 	m_displayOff = displayOff;
 	emit displayOffChanged(m_displayOff);

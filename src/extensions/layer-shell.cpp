@@ -61,6 +61,7 @@ void LayerSurfaceV1::zwlr_layer_surface_v1_set_exclusive_zone(
 	}
 
 	targetZoneAnim->setDuration(200);
+	targetZoneAnim->setStartValue(new_ls_zone);
 	targetZoneAnim->setEndValue(zone);
 	targetZoneAnim->start();
 }
@@ -169,6 +170,8 @@ int32_t LayerSurfaceV1::targetZone()
 void LayerSurfaceV1::setTargetZone(int32_t targetZone)
 {
 	if (m_targetZone != targetZone) {
+		if(targetZone == 0 && ls_scope == "cutie-keyboard")
+			emit hideKeyboard();
 		m_targetZone = targetZone;
 		emit targetZoneChanged(m_targetZone);
 	}

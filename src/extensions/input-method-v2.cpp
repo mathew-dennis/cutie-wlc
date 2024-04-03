@@ -92,12 +92,20 @@ InputMethodV2::InputMethodV2(struct ::wl_client *client, uint32_t id,
 
 void InputMethodV2::hidePanel()
 {
-	if (!m_panelHidden) {
-		this->send_deactivate();
-		this->send_done();
-		m_serial += 1;
-		m_panelHidden = true;
-	}
+	CwlView *v = m_compositor->findTlView(
+		m_compositor->defaultSeat()->keyboardFocus());
+
+	if (v != nullptr)
+		if (v->getAppId() == "cutie-home")
+			m_forceHide = true;
+
+	onHideInputPanel();
+}
+
+void InputMethodV2::showPanel()
+{
+	m_forceHide = false;
+	onShowInputPanel();
 }
 
 void InputMethodV2::zwp_input_method_v2_commit_string(Resource *resource,
@@ -186,6 +194,10 @@ void InputMethodV2::zwp_input_method_v2_commit(Resource *resource,
 		m_altModifier = !m_altModifier;
 		m_lastString = "";
 		return;
+	} else if (m_lastString == "\u21E7") {
+		m_shiftModifier = !m_shiftModifier;
+		m_lastString = "";
+		return;
 	}
 
 	if (m_ctrlModifier || m_altModifier) {
@@ -206,6 +218,31 @@ void InputMethodV2::zwp_input_method_v2_commit(Resource *resource,
 	} else if (v->tiV3 != nullptr) {
 		v->tiV3->send_commit_string(m_lastString);
 		v->tiV3->send_done(0);
+	} else if (v != nullptr) {
+		QKeySequence qtkey = QKeySequence(m_lastString);
+		Qt::KeyboardModifiers modifiers;
+
+		if (m_shiftModifier)
+			modifiers |= Qt::ShiftModifier;
+
+		QKeyEvent *key_press = new QKeyEvent(QEvent::KeyPress,
+						     qtkey[0].key(), modifiers);
+		QKeyEvent *key_release = new QKeyEvent(QEvent::KeyRelease,
+						       qtkey[0].key(),
+						       Qt::KeyboardModifiers{});
+
+		m_compositor->defaultSeat()->sendFullKeyEvent(key_press);
+		m_compositor->defaultSeat()->sendFullKeyEvent(key_release);
+
+		key_press = new QKeyEvent(QEvent::KeyPress, Qt::Key_AltGr,
+					  Qt::KeyboardModifiers{});
+		key_release = new QKeyEvent(QEvent::KeyRelease, Qt::Key_AltGr,
+					    Qt::KeyboardModifiers{});
+
+		m_compositor->defaultSeat()->sendFullKeyEvent(key_press);
+		m_compositor->defaultSeat()->sendFullKeyEvent(key_release);
+
+		m_shiftModifier = false;
 	}
 	m_lastString = "";
 }
@@ -227,18 +264,28 @@ void InputMethodV2::zwp_input_method_v2_destroy(Resource *resource)
 
 void InputMethodV2::onShowInputPanel()
 {
-	this->send_activate();
-	this->send_done();
-	m_serial += 1;
-	m_panelHidden = false;
+	if (m_panelHidden && !m_forceHide) {
+		this->send_activate();
+		this->send_done();
+		m_serial += 1;
+		m_panelHidden = false;
+
+		CwlView *v = m_compositor->findTlView(
+			m_compositor->defaultSeat()->keyboardFocus());
+
+		if (v != nullptr)
+			setContentType(v->imContentHint, v->imContentPurpose);
+	}
 }
 
 void InputMethodV2::onHideInputPanel()
 {
-	this->send_deactivate();
-	this->send_done();
-	m_serial += 1;
-	m_panelHidden = true;
+	if (!m_panelHidden) {
+		this->send_deactivate();
+		this->send_done();
+		m_serial += 1;
+		m_panelHidden = true;
+	}
 }
 
 void InputMethodV2::onContentTypeChanged(uint32_t hint, uint32_t purpose)
@@ -248,7 +295,7 @@ void InputMethodV2::onContentTypeChanged(uint32_t hint, uint32_t purpose)
 		m_compositor->defaultSeat()->keyboardFocus();
 	if (!currentSurface)
 		return;
-	CwlView *curentView = m_compositor->findView(currentSurface);
+	CwlView *curentView = m_compositor->findTlView(currentSurface);
 	if (!curentView)
 		return;
 	curentView->imContentHint = hint;
@@ -270,7 +317,6 @@ void InputMethodV2::sendWithModifier()
 
 	if (m_ctrlModifier)
 		modifiers |= Qt::ControlModifier;
-
 	if (m_altModifier)
 		modifiers |= Qt::AltModifier;
 
@@ -299,7 +345,19 @@ void InputMethodV2::onKeyboardFocusChanged(QWaylandSurface *newFocus,
 					   QWaylandSurface *oldFocus)
 {
 	CwlView *newView = m_compositor->findView(newFocus);
-	if (newView)
+	CwlView *oldView = m_compositor->findView(oldFocus);
+
+	if (oldView != nullptr)
+		if (oldView->tiV3 != nullptr)
+			oldView->tiV3->send_leave(oldFocus->resource());
+	if (newView != nullptr) {
 		setContentType(newView->imContentHint,
 			       newView->imContentPurpose);
+		if (newView->getAppId() == "cutie-home")
+			m_forceHide = true;
+		else
+			m_forceHide = false;
+		if (newView->tiV3 != nullptr)
+			newView->tiV3->send_enter(newFocus->resource());
+	}
 }

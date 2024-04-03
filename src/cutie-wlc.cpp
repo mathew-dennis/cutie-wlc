@@ -247,6 +247,12 @@ void CwlCompositor::animationValueChanged(const QVariant &value)
 	triggerRender();
 }
 
+void CwlCompositor::onHideKeyboard()
+{
+	if (m_inputMngr->getInputMethod() != nullptr)
+		m_inputMngr->getInputMethod()->hidePanel();
+}
+
 void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 				      QWaylandXdgSurface *xdgSurface)
 {
@@ -302,6 +308,8 @@ void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 		&CwlCompositor::viewSurfaceDestroyed);
 	connect(view->m_layerSurface, &LayerSurfaceV1::layerSurfaceDataChanged,
 		m_workspace, &CwlWorkspace::onLayerSurfaceDataChanged);
+	connect(view->m_layerSurface, &LayerSurfaceV1::hideKeyboard, this,
+		&CwlCompositor::onHideKeyboard);
 }
 
 CwlView *CwlCompositor::getHomeView()
@@ -388,9 +396,6 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 			     m_glwindow->gesture()->startingPoint())
 				    .x() > GESTURE_MINIMUM_THRESHOLD) {
 				m_glwindow->gesture()->confirmGesture();
-				if (m_inputMngr->getInputMethod() != nullptr)
-					m_inputMngr->getInputMethod()
-						->hidePanel();
 			}
 			setBlur(1.0 -
 				1.0 * ev->points().first().globalPosition().x() /
@@ -420,9 +425,6 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 			     m_glwindow->gesture()->startingPoint())
 				    .x() > GESTURE_MINIMUM_THRESHOLD) {
 				m_glwindow->gesture()->confirmGesture();
-				if (m_inputMngr->getInputMethod() != nullptr)
-					m_inputMngr->getInputMethod()
-						->hidePanel();
 			}
 			setBlur(1.0 *
 				ev->points().first().globalPosition().x() /
@@ -492,10 +494,6 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 				     m_glwindow->gesture()->startingPoint())
 					    .y() > GESTURE_MINIMUM_THRESHOLD) {
 					m_glwindow->gesture()->confirmGesture();
-					if (m_inputMngr->getInputMethod() !=
-					    nullptr)
-						m_inputMngr->getInputMethod()
-							->hidePanel();
 				}
 				setLauncherPosition(qMin(
 					1.0,
@@ -518,6 +516,43 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 					launcherCloseAnim->start();
 			}
 			return true;
+		}
+	}
+
+	if (corner == CORNER_BR || corner == CORNER_BL) {
+		if (launcherPostion() > 0.0) {
+			return false;
+		}
+
+		if (m_panelView != nullptr)
+			if (m_panelView->panelState > 1)
+				return false;
+
+		if (ev->isBeginEvent() || ev->isUpdateEvent()) {
+			if (m_inputMngr->getInputMethod() != nullptr)
+				if (!m_inputMngr->getInputMethod()
+					     ->isPanelHidden()) {
+					return false;
+				}
+			if ((-ev->points().first().globalPosition() +
+			     m_glwindow->gesture()->startingPoint())
+				    .y() > GESTURE_MINIMUM_THRESHOLD) {
+				m_glwindow->gesture()->confirmGesture();
+			}
+			return true;
+		}
+
+		if (ev->isEndEvent()) {
+			if (m_panelView != nullptr) {
+				if (m_panelView->panelState > 1) {
+					return false;
+				}
+			}
+			if (ev->points().first().globalPosition().y() <
+			    m_glwindow->height() * 0.8) {
+				m_inputMngr->getInputMethod()->showPanel();
+				return true;
+			}
 		}
 	}
 
