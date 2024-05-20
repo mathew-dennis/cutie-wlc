@@ -22,4 +22,4 @@ workflows:
       - setup:
           filters:
             tags:
-              only: /^cutie\/.*\/.*/
+              only: /^cutie\/.*/
