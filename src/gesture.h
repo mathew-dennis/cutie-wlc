@@ -8,7 +8,11 @@
 #define GESTURE_MINIMUM_THRESHOLD 10
 // Minimum offset to consider a gesture accepted.
 #define GESTURE_ACCEPT_THRESHOLD 200
-#define GESTURE_OFFSET 50
+#define GESTURE_EDGE_OFFSET 20
+#define GESTURE_CORNER_OFFSET 50
+
+#define SCALED_GESTURE_EDGE_OFFSET (GESTURE_EDGE_OFFSET * m_cwlcompositor->scaleFactor())
+#define SCALED_GESTURE_CORNER_OFFSET (GESTURE_CORNER_OFFSET * m_cwlcompositor->scaleFactor())
 
 enum EdgeSwipe : uint32_t {
 	EDGE_RIGHT = 0,
@@ -39,10 +43,6 @@ class CwlGesture : public QObject {
 
     private:
 	void updateGestureRect();
-	inline int scaledGestureOffset()
-	{
-		return GESTURE_OFFSET * m_cwlcompositor->scaleFactor();
-	}
 
 	CwlCompositor *m_cwlcompositor = nullptr;
 	EdgeSwipe edge = EDGE_UNDEFINED;

@@ -92,32 +92,32 @@ QPointF CwlGesture::startingPoint()
 void CwlGesture::updateGestureRect()
 {
 	m_edges[EdgeSwipe::EDGE_TOP] =
-		QRect(scaledGestureOffset(), 0,
-		      m_screenSize.width() - (2 * scaledGestureOffset()),
-		      scaledGestureOffset());
+		QRect(SCALED_GESTURE_EDGE_OFFSET, 0,
+		      m_screenSize.width() - (2 * SCALED_GESTURE_EDGE_OFFSET),
+		      SCALED_GESTURE_EDGE_OFFSET);
 	m_edges[EdgeSwipe::EDGE_BOTTOM] =
-		QRect(scaledGestureOffset(),
-		      m_screenSize.height() - scaledGestureOffset(),
-		      m_screenSize.width() - (2 * scaledGestureOffset()),
-		      scaledGestureOffset());
+		QRect(SCALED_GESTURE_EDGE_OFFSET,
+		      m_screenSize.height() - SCALED_GESTURE_EDGE_OFFSET,
+		      m_screenSize.width() - (2 * SCALED_GESTURE_EDGE_OFFSET),
+		      SCALED_GESTURE_EDGE_OFFSET);
 	m_edges[EdgeSwipe::EDGE_LEFT] =
-		QRect(0, scaledGestureOffset(), scaledGestureOffset(),
-		      m_screenSize.height() - (2 * scaledGestureOffset()));
+		QRect(0, SCALED_GESTURE_EDGE_OFFSET, SCALED_GESTURE_EDGE_OFFSET,
+		      m_screenSize.height() - (2 * SCALED_GESTURE_EDGE_OFFSET));
 	m_edges[EdgeSwipe::EDGE_RIGHT] =
-		QRect(m_screenSize.width() - scaledGestureOffset(),
-		      scaledGestureOffset(), scaledGestureOffset(),
-		      m_screenSize.height() - (2 * scaledGestureOffset()));
+		QRect(m_screenSize.width() - SCALED_GESTURE_EDGE_OFFSET,
+		      SCALED_GESTURE_EDGE_OFFSET, SCALED_GESTURE_EDGE_OFFSET,
+		      m_screenSize.height() - (2 * SCALED_GESTURE_EDGE_OFFSET));
 
 	m_corners[CornerSwipe::CORNER_TL] =
-		QRect(0, 0, scaledGestureOffset(), scaledGestureOffset());
+		QRect(0, 0, SCALED_GESTURE_CORNER_OFFSET, SCALED_GESTURE_CORNER_OFFSET);
 	m_corners[CornerSwipe::CORNER_TR] =
-		QRect(m_screenSize.width() - scaledGestureOffset(), 0,
-		      scaledGestureOffset(), scaledGestureOffset());
+		QRect(m_screenSize.width() - SCALED_GESTURE_CORNER_OFFSET, 0,
+		      SCALED_GESTURE_CORNER_OFFSET, SCALED_GESTURE_CORNER_OFFSET);
 	m_corners[CornerSwipe::CORNER_BL] =
-		QRect(0, m_screenSize.height() - scaledGestureOffset(),
-		      scaledGestureOffset(), scaledGestureOffset());
+		QRect(0, m_screenSize.height() - SCALED_GESTURE_CORNER_OFFSET,
+		      SCALED_GESTURE_CORNER_OFFSET, SCALED_GESTURE_CORNER_OFFSET);
 	m_corners[CornerSwipe::CORNER_BR] =
-		QRect(m_screenSize.width() - scaledGestureOffset(),
-		      m_screenSize.height() - scaledGestureOffset(),
-		      scaledGestureOffset(), scaledGestureOffset());
+		QRect(m_screenSize.width() - SCALED_GESTURE_CORNER_OFFSET,
+		      m_screenSize.height() - SCALED_GESTURE_CORNER_OFFSET,
+		      SCALED_GESTURE_CORNER_OFFSET, SCALED_GESTURE_CORNER_OFFSET);
 }
