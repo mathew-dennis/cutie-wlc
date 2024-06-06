@@ -55,6 +55,7 @@ QPointF CwlView::getPosition()
 void CwlView::setPosition(const QPointF &pos)
 {
 	m_position = pos;
+	m_cwlcompositor->triggerRender();
 }
 
 QSize CwlView::size()
