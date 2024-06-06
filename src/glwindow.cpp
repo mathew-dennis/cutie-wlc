@@ -87,7 +87,7 @@ void GlWindow::paintGL()
 					 .y() *
 				 m_cwlcompositor->scaleFactor() / height()));
 		else if (view->isToplevel())
-			if (m_cwlcompositor->launcherPostion() > 0.0)
+			if (m_cwlcompositor->launcherPosition() > 0.0)
 				m_textureBlitter.setOpacity(
 					m_cwlcompositor->blur() *
 					m_cwlcompositor->m_launcherView
@@ -101,7 +101,7 @@ void GlWindow::paintGL()
 		else
 			m_textureBlitter.setOpacity(1.0);
 
-		if (m_cwlcompositor->launcherPostion() == 1.0 &&
+		if (m_cwlcompositor->launcherPosition() == 1.0 &&
 		    view->layer == CwlViewLayer::TOP)
 			continue;
 

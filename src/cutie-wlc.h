@@ -25,8 +25,8 @@ class InputMethodManagerV2;
 class CwlCompositor : public QWaylandCompositor {
 	Q_OBJECT
 	Q_PROPERTY(double blur READ blur WRITE setBlur NOTIFY blurChanged)
-	Q_PROPERTY(double launcherPostion READ launcherPostion WRITE
-			   setLauncherPosition NOTIFY launcherPostionChanged)
+	Q_PROPERTY(double launcherPosition READ launcherPosition WRITE
+			   setLauncherPosition NOTIFY launcherPositionChanged)
     public:
 	CwlCompositor(GlWindow *glwindow);
 	~CwlCompositor() override;
@@ -71,13 +71,13 @@ class CwlCompositor : public QWaylandCompositor {
 	double blur();
 	void setBlur(double blur);
 
-	double launcherPostion();
+	double launcherPosition();
 	void setLauncherPosition(double position);
 
     signals:
 	void scaleFactorChanged(int scaleFactor);
 	void blurChanged(double blur);
-	void launcherPostionChanged(double launcherPostion);
+	void launcherPositionChanged(double launcherPosition);
 	void specialKey(CutieShell::SpecialKey key);
 
     public slots:
@@ -120,9 +120,9 @@ class CwlCompositor : public QWaylandCompositor {
 		new QPropertyAnimation(this, "blur", this);
 
 	QPropertyAnimation *launcherCloseAnim =
-		new QPropertyAnimation(this, "launcherPostion", this);
+		new QPropertyAnimation(this, "launcherPosition", this);
 	QPropertyAnimation *launcherOpenAnim =
-		new QPropertyAnimation(this, "launcherPostion", this);
+		new QPropertyAnimation(this, "launcherPosition", this);
 
 	int m_scaleFactor = 1;
 	double m_blur = 0.0;

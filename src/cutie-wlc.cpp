@@ -345,7 +345,7 @@ void CwlCompositor::raise(CwlView *view)
 void CwlCompositor::handleTouchEvent(QList<QEventPoint> points)
 {
 	CwlView *view = m_launcherView;
-	if (launcherPostion() == 0.0)
+	if (launcherPosition() == 0.0)
 		view = viewAt(points.first().globalPosition().toPoint());
 	if (view == nullptr)
 		return;
@@ -361,7 +361,7 @@ void CwlCompositor::handleTouchEvent(QList<QEventPoint> points)
 void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points)
 {
 	CwlView *view = m_launcherView;
-	if (launcherPostion() == 0.0)
+	if (launcherPosition() == 0.0)
 		view = viewAt(points.first().position().toPoint());
 	if (view == nullptr)
 		return;
@@ -388,7 +388,7 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 {
 	if (edge == EDGE_LEFT) {
 		if (ev->isBeginEvent()) {
-			return (launcherPostion() == 0.0) && (blur() != 0.0);
+			return (launcherPosition() == 0.0) && (blur() != 0.0);
 		}
 
 		if (ev->isUpdateEvent()) {
@@ -417,7 +417,7 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 
 	if (edge == EDGE_RIGHT) {
 		if (ev->isBeginEvent()) {
-			return (launcherPostion() == 0.0) && (blur() != 0.0);
+			return (launcherPosition() == 0.0) && (blur() != 0.0);
 		}
 
 		if (ev->isUpdateEvent()) {
@@ -488,7 +488,7 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 	}
 
 	if (edge == EDGE_TOP) {
-		if (launcherPostion() > 0.0) {
+		if (launcherPosition() > 0.0) {
 			if (ev->isBeginEvent() || ev->isUpdateEvent()) {
 				if ((ev->points().first().globalPosition() -
 				     m_glwindow->gesture()->startingPoint())
@@ -520,7 +520,7 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 	}
 
 	if (corner == CORNER_BR || corner == CORNER_BL) {
-		if (launcherPostion() > 0.0) {
+		if (launcherPosition() > 0.0) {
 			return false;
 		}
 
@@ -638,7 +638,7 @@ void CwlCompositor::setBlur(double blur)
 	emit blurChanged(m_blur);
 }
 
-double CwlCompositor::launcherPostion()
+double CwlCompositor::launcherPosition()
 {
 	return m_launcherPosition;
 }
@@ -659,7 +659,7 @@ void CwlCompositor::setLauncherPosition(double position)
 	if (m_homeOpen)
 		setBlur(m_launcherPosition);
 	m_launcherView->setPosition(newPos);
-	emit launcherPostionChanged(m_launcherPosition);
+	emit launcherPositionChanged(m_launcherPosition);
 }
 
 ForeignToplevelManagerV1 *CwlCompositor::foreignTlManagerV1()
