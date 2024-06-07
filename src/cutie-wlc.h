@@ -74,6 +74,9 @@ class CwlCompositor : public QWaylandCompositor {
 	double launcherPosition();
 	void setLauncherPosition(double position);
 
+	void grabSurface(QWaylandSurfaceGrabber *grabber,
+			 const QWaylandBufferRef &buffer) override;
+
     signals:
 	void scaleFactorChanged(int scaleFactor);
 	void blurChanged(double blur);

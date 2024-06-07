@@ -10,6 +10,8 @@
 #include <QWaylandPointer>
 #include <QWaylandTouch>
 #include <QTouchEvent>
+#include <QOpenGLFramebufferObject>
+#include <QOpenGLTexture>
 
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
@@ -665,4 +667,40 @@ void CwlCompositor::setLauncherPosition(double position)
 ForeignToplevelManagerV1 *CwlCompositor::foreignTlManagerV1()
 {
 	return m_foreignTlManagerV1;
+}
+
+void CwlCompositor::grabSurface(QWaylandSurfaceGrabber *grabber,
+				const QWaylandBufferRef &buffer)
+{
+	if (buffer.isSharedMemory()) {
+		emit grabber->success(buffer.image());
+	} else {
+		if (QOpenGLContext::currentContext()) {
+			QOpenGLFramebufferObject fbo(buffer.size());
+			fbo.bind();
+			QOpenGLTextureBlitter blitter;
+			blitter.create();
+
+			glViewport(0, 0, buffer.size().width(),
+				   buffer.size().height());
+			glClearColor(0.f, 0.f, 0.f, 0.f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			QOpenGLTextureBlitter::Origin surfaceOrigin =
+				buffer.origin() ==
+						QWaylandSurface::OriginTopLeft ?
+					QOpenGLTextureBlitter::OriginTopLeft :
+					QOpenGLTextureBlitter::OriginBottomLeft;
+
+			auto texture = buffer.toOpenGLTexture();
+			blitter.bind(texture->target());
+			blitter.blit(texture->textureId(), QMatrix4x4(),
+				     surfaceOrigin);
+			blitter.release();
+
+			emit grabber->success(fbo.toImage());
+		} else
+			emit grabber->failed(
+				QWaylandSurfaceGrabber::UnknownBufferType);
+	}
 }
