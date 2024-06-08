@@ -7,6 +7,7 @@
 #include <QMouseEvent>
 #include <QGuiApplication>
 #include <qpa/qplatformnativeinterface.h>
+#include <qpa/qplatformscreen.h>
 #include <QtWaylandCompositor/QWaylandSeat>
 
 GlWindow::GlWindow()
@@ -33,16 +34,17 @@ void GlWindow::setDisplayOff(bool displayOff)
 {
 	if (m_displayOff == displayOff)
 		return;
-	if (m_displayOff) {
-		QGuiApplication::platformNativeInterface()
-			->nativeResourceForIntegration("displayon");
-		requestUpdate();
-	} else {
-		QGuiApplication::platformNativeInterface()
-			->nativeResourceForIntegration("displayoff");
+
+	QGuiApplication::primaryScreen()->handle()->setPowerState(
+		displayOff ? QPlatformScreen::PowerStateOff :
+			     QPlatformScreen::PowerStateOn);
+
+	if (displayOff) {
 		m_cwlcompositor->setLauncherPosition(0.0);
 		m_cwlcompositor->onHideKeyboard();
-	}
+	} else
+		requestUpdate();
+
 	m_displayOff = displayOff;
 	emit displayOffChanged(m_displayOff);
 }
