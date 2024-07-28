@@ -185,11 +185,11 @@ void GlWindow::keyPressEvent(QKeyEvent *event)
 
 	if (event->key() == Qt::Key_VolumeUp)
 		m_cwlcompositor->specialKey(
-			CutieShell::SpecialKey::VOLUME_UP_PRESS);
+			CutieShell::SpecialKey::VOLUMEUP_PRESS);
 
 	if (event->key() == Qt::Key_VolumeDown)
 		m_cwlcompositor->specialKey(
-			CutieShell::SpecialKey::VOLUME_DOWN_PRESS);		
+			CutieShell::SpecialKey::VOLUMEDOWN_PRESS);		
 }
 
 void GlWindow::keyReleaseEvent(QKeyEvent *event)
@@ -200,9 +200,9 @@ void GlWindow::keyReleaseEvent(QKeyEvent *event)
 
 	if (event->key() == Qt::Key_VolumeUp)
 		m_cwlcompositor->specialKey(
-			CutieShell::SpecialKey::VOLUME_UP_RELEASE);
+			CutieShell::SpecialKey::VOLUMEUP_RELEASE);
 
 	if (event->key() == Qt::Key_VolumeDown)
 		m_cwlcompositor->specialKey(
-			CutieShell::SpecialKey::VOLUME_DOWN_RELEASE);
+			CutieShell::SpecialKey::VOLUMEDOWN_RELEASE);
 }
