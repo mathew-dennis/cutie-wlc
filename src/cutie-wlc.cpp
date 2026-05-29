@@ -602,6 +602,8 @@ void CwlCompositor::triggerRender()
 
 void CwlCompositor::onToplevelDamaged(CwlView *view)
 {
+    if (!m_homeOpen)   // don't even send the event
+        return;
     m_cutieshell->onThumbnailDamage(view);
 }
 
