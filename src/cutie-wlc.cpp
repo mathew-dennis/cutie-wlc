@@ -111,7 +111,7 @@ void CwlCompositor::create()
 		Might also be the hwcomposer issue https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html
 	*/
     qputenv("QSG_NO_VSYNC", QByteArray("1"));
-    qputenv("QSG_RENDER_LOOP", QByteArray("basic"));
+    qputenv("QSG_RENDER_LOOP", QByteArray("threaded"));
 
     QStringList args = QStringList();
     args.append("-c");
