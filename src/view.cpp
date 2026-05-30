@@ -321,8 +321,7 @@ void CwlView::onRedraw()
 {
 	m_cwlcompositor->triggerRender();
 	if (isToplevel())
-		;
-	m_cwlcompositor->onToplevelDamaged(this);
+	    m_cwlcompositor->onToplevelDamaged(this);
 }
 
 QWaylandSurfaceGrabber *CwlView::grabber()
