@@ -31,13 +31,18 @@ QOpenGLTexture *CwlView::getTexture()
 		if (bufRef.bufferType() ==
 		    QWaylandBufferRef::BufferType::BufferType_Egl) {
 			m_texture = bufRef.toOpenGLTexture();
-		} else if (bufRef.bufferType() ==
-			   QWaylandBufferRef::BufferType::
-				   BufferType_SharedMemory) {
-			m_isImageBuffer = true;
-			delete m_texture;
-			m_texture = new QOpenGLTexture(bufRef.image());
-		}
+		} else if (bufRef.bufferType() == QWaylandBufferRef::BufferType_SharedMemory) {
+            m_isImageBuffer = true;
+            QImage img = bufRef.image();
+            if (!m_texture || m_texture->width() != img.width()
+                   || m_texture->height() != img.height()) {
+               delete m_texture;
+               m_texture = new QOpenGLTexture(img);
+            } else {
+                // Reuse texture, only re-upload pixel data
+                m_texture->setData(img);
+            }
+         }
 	}
 	return m_texture;
 }
