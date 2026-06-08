@@ -4,6 +4,7 @@
 #include <QOpenGLTextureBlitter>
 #include <QEventPoint>
 #include <QResizeEvent> // Added for resizeEvent support
+#include <atomic>
 
 #include <cutie-wlc.h>
 #include <gesture.h>
@@ -17,6 +18,7 @@ class GlWindow : public QOpenGLWindow {
     void setCompositor(CwlCompositor *cwlcompositor);
     bool displayOff();
     void setDisplayOff(bool displayOff);
+    void scheduleUpdate();
     inline CwlGesture *gesture()
     {
         return m_gesture;
@@ -50,6 +52,10 @@ class GlWindow : public QOpenGLWindow {
 
     QList<QEventPoint *> m_evPoint;
     bool m_displayOff = false;
+
+    // Atomic so it can be safely written from the main thread
+    // and read/cleared from the render thread (threaded render loop)
+    std::atomic<bool> m_pendingUpdate{false};
 
     CwlCompositor *m_cwlcompositor = nullptr;
     CwlGesture *m_gesture = nullptr;

@@ -58,13 +58,12 @@ CwlCompositor::~CwlCompositor()
 
 void CwlCompositor::create()
 {
-    // --- Fallback for 0,0 geometry ---
+    // Fallback for 0,0 geometry (can happen before the window is shown)
     QSize windowSize = m_glwindow->size();
-    if (windowSize.width() <= 0 || windowSize.height() <= 0) {
+    if (windowSize.width() <= 0 || windowSize.height() <= 0)
         windowSize = QSize(720, 1280);
-    }
 
-    // --- Ensure scale is never 0 ---
+    // Ensure scale is never 0
     if (m_scaleFactor < 1) m_scaleFactor = 1;
 
     m_output = new QWaylandOutput(this, m_glwindow);
@@ -103,13 +102,17 @@ void CwlCompositor::create()
     qunsetenv("QT_SCALE_FACTOR");
     qputenv("WAYLAND_DISPLAY", socketName());
 
-	/*
-		Setting QSG_NO_VSYNC and QSG_RENDER_LOOP makes resizing QtQuick apps
-		much smoother. There is a QTBUG-51112 which MIGHT be related to our issue.
-		But the bug describes actually a slightly different issue.
+    /*
+        Setting QSG_RENDER_LOOP=threaded moves QtQuick scene graph rendering
+        onto a dedicated thread, keeping the main thread free for Wayland
+        event processing and input handling.
 
-		Might also be the hwcomposer issue https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html
-	*/
+        QSG_NO_VSYNC was previously used with the 'basic' loop to avoid a
+        deadlock; it is not needed (and counterproductive) with 'threaded'.
+
+        See also QTBUG-51112 and the hwcomposer note at:
+        https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html
+    */
     // qputenv("QSG_NO_VSYNC", QByteArray("1"));
     qputenv("QSG_RENDER_LOOP", QByteArray("threaded"));
 
@@ -165,20 +168,18 @@ CwlView *CwlCompositor::viewAt(const QPoint &position)
     CwlView *ret = nullptr;
     for (auto it = getViews().crbegin(); it != getViews().crend(); ++it) {
         CwlView *view = *it;
-		QRectF geom(view->getPosition(), view->size() * scaleFactor());
+        QRectF geom(view->getPosition(), view->size() * scaleFactor());
         QPoint checkPoint = position;
 
         if (view->getAppId() == "cutie-keyboard")
-			checkPoint = position / scaleFactor();
+            checkPoint = position / scaleFactor();
 
         if (geom.contains(checkPoint)) {
             if (view->getChildViews().size() > 0) {
-				for (CwlView *childView :
-				     view->getChildViews()) {
-					checkPoint = position / scaleFactor();
-					QRectF geom(childView->getPosition(),
-						    childView->size() *
-							    scaleFactor());
+                for (CwlView *childView : view->getChildViews()) {
+                    checkPoint = position / scaleFactor();
+                    QRectF geom(childView->getPosition(),
+                                childView->size() * scaleFactor());
                     if (geom.contains(checkPoint)) {
                         ret = childView;
                         return ret;
@@ -226,7 +227,7 @@ CwlView *CwlCompositor::findTreeView(QWaylandSurface *s, CwlView *rootView)
 }
 
 void CwlCompositor::onXdgToplevelCreated(QWaylandXdgToplevel *toplevel,
-                     QWaylandXdgSurface *xdgSurface)
+                                         QWaylandXdgSurface *xdgSurface)
 {
     CwlView *view = new CwlView(this, m_workspace->availableGeometry());
     view->setOutput(outputFor(m_glwindow));
@@ -267,7 +268,7 @@ void CwlCompositor::onHideKeyboard()
 }
 
 void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
-                      QWaylandXdgSurface *xdgSurface)
+                                      QWaylandXdgSurface *xdgSurface)
 {
     CwlView *view = new CwlView(this, m_workspace->availableGeometry());
     view->setOutput(outputFor(m_glwindow));
@@ -278,21 +279,21 @@ void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 
     qDebug() << "Popup " << (uint64_t)view << " created";
 
-	view->setPosition(popup->unconstrainedPosition() +
-			  parent_view->getPosition());
+    view->setPosition(popup->unconstrainedPosition() +
+                      parent_view->getPosition());
 
-        view->layer = TOP;
-	if (parent_view) {
+    view->layer = TOP;
+    if (parent_view) {
         parent_view->addChildView(view);
         view->setParentView(parent_view);
-		qDebug() << "Popup " << (uint64_t)view << " parented to "
-			 << (uint64_t)parent_view;
-		connect(view->surface(), &QWaylandSurface::redraw, view,
-			&CwlView::onRedraw);
-		connect(view, &QWaylandView::surfaceDestroyed, this,
-			&CwlCompositor::viewSurfaceDestroyed);
-		connect(popup, &QWaylandXdgPopup::configuredGeometryChanged,
-			view, &CwlView::onPopUpGeometryChanged);
+        qDebug() << "Popup " << (uint64_t)view << " parented to "
+                 << (uint64_t)parent_view;
+        connect(view->surface(), &QWaylandSurface::redraw, view,
+            &CwlView::onRedraw);
+        connect(view, &QWaylandView::surfaceDestroyed, this,
+            &CwlCompositor::viewSurfaceDestroyed);
+        connect(popup, &QWaylandXdgPopup::configuredGeometryChanged,
+            view, &CwlView::onPopUpGeometryChanged);
     } else
         m_workspace->addView(view);
 }
@@ -365,7 +366,7 @@ void CwlCompositor::handleTouchEvent(QList<QEventPoint> points)
     foreach(QEventPoint point, points) {
         defaultSeat()->touch()->sendTouchPointEvent(
             view->surface(), point.id(),
-			point.position() / scaleFactor() - view->getPosition(),
+            point.position() / scaleFactor() - view->getPosition(),
             (Qt::TouchPointState)point.state());
     }
     defaultSeat()->touch()->sendFrameEvent(view->surface()->client());
@@ -379,19 +380,19 @@ void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points)
     if (view == nullptr)
         return;
     defaultSeat()->sendMouseMoveEvent(
-		view, points.first().position().toPoint() / scaleFactor() -
+        view, points.first().position().toPoint() / scaleFactor() -
                   view->getPosition());
 }
 
 void CwlCompositor::handleMousePressEvent(QList<QEventPoint> points,
-                      Qt::MouseButton btn)
+                                          Qt::MouseButton btn)
 {
     handleMouseMoveEvent(points);
     defaultSeat()->sendMousePressEvent(btn);
 }
 
 void CwlCompositor::handleMouseReleaseEvent(QList<QEventPoint> points,
-                        Qt::MouseButton btn)
+                                            Qt::MouseButton btn)
 {
     handleMouseMoveEvent(points);
     defaultSeat()->sendMouseReleaseEvent(btn);
@@ -463,8 +464,7 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
                 if (m_panelView->panelState > 1)
                     return false;
             if (m_inputMngr->getInputMethod() != nullptr)
-                if (!m_inputMngr->getInputMethod()
-                         ->isPanelHidden())
+                if (!m_inputMngr->getInputMethod()->isPanelHidden())
                     return false;
             if ((-ev->points().first().globalPosition() +
                  m_glwindow->gesture()->startingPoint())
@@ -476,20 +476,16 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
                                    .globalPosition()
                                    .y() /
                                scaleFactor() -
-                           m_workspace->outputGeometry()
-                               .y()) /
-                            m_workspace
-                                ->outputGeometry()
-                                .height()));
+                           m_workspace->outputGeometry().y()) /
+                            m_workspace->outputGeometry().height()));
             }
             return true;
         }
 
         if (ev->isEndEvent()) {
             if (m_panelView != nullptr) {
-                if (m_panelView->panelState > 1) {
+                if (m_panelView->panelState > 1)
                     return false;
-                }
             }
             if (ev->points().first().globalPosition().y() <
                 m_glwindow->height() * 0.8)
@@ -514,11 +510,8 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
                                    .globalPosition()
                                    .y() /
                                scaleFactor() -
-                           m_workspace->outputGeometry()
-                               .y()) /
-                            m_workspace
-                                ->outputGeometry()
-                                .height()));
+                           m_workspace->outputGeometry().y()) /
+                            m_workspace->outputGeometry().height()));
             }
 
             if (ev->isEndEvent()) {
@@ -533,9 +526,8 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
     }
 
     if (corner == CORNER_BR || corner == CORNER_BL) {
-        if (launcherPosition() > 0.0) {
+        if (launcherPosition() > 0.0)
             return false;
-        }
 
         if (m_panelView != nullptr)
             if (m_panelView->panelState > 1)
@@ -543,10 +535,8 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 
         if (ev->isBeginEvent() || ev->isUpdateEvent()) {
             if (m_inputMngr->getInputMethod() != nullptr)
-                if (!m_inputMngr->getInputMethod()
-                         ->isPanelHidden()) {
+                if (!m_inputMngr->getInputMethod()->isPanelHidden())
                     return false;
-                }
             if ((-ev->points().first().globalPosition() +
                  m_glwindow->gesture()->startingPoint())
                     .y() > GESTURE_MINIMUM_THRESHOLD) {
@@ -557,9 +547,8 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 
         if (ev->isEndEvent()) {
             if (m_panelView != nullptr) {
-                if (m_panelView->panelState > 1) {
+                if (m_panelView->panelState > 1)
                     return false;
-                }
             }
             if (ev->points().first().globalPosition().y() <
                 m_glwindow->height() * 0.8) {
@@ -597,12 +586,18 @@ void CwlCompositor::viewSurfaceDestroyed()
 
 void CwlCompositor::triggerRender()
 {
-    m_glwindow->requestUpdate();
+    // Delegate to GlWindow::scheduleUpdate() which coalesces multiple
+    // triggerRender() calls within the same event loop turn into a
+    // single requestUpdate(), preventing redundant frame scheduling
+    // during animations, gestures, and simultaneous surface damage.
+    m_glwindow->scheduleUpdate();
 }
 
 void CwlCompositor::onToplevelDamaged(CwlView *view)
 {
-    if (!m_homeOpen)   // don't even send the event
+    // Only refresh thumbnails when the app switcher (home screen) is
+    // visible — avoids glReadPixels grabs while an app is in the foreground.
+    if (!m_homeOpen)
         return;
     m_cutieshell->onThumbnailDamage(view);
 }
@@ -666,15 +661,15 @@ void CwlCompositor::setLauncherPosition(double position)
         return;
     m_launcherPosition = position;
     QPointF newPos = m_launcherView->getPosition();
-    
+
     // Safety check for workspace height to avoid division by zero or invalid positioning
     double workspaceHeight = qMax(100.0, (double)m_workspace->outputGeometry().height());
-    
+
     newPos.setY((1.0 - m_launcherPosition) * workspaceHeight + m_workspace->outputGeometry().y());
-    
+
     if (newPos.y() < m_workspace->availableGeometry().y() - m_workspace->outputGeometry().y())
         newPos.setY(m_workspace->availableGeometry().y() - m_workspace->outputGeometry().y());
-    
+
     if (m_homeOpen)
         setBlur(m_launcherPosition);
     m_launcherView->setPosition(newPos);
@@ -687,7 +682,7 @@ ForeignToplevelManagerV1 *CwlCompositor::foreignTlManagerV1()
 }
 
 void CwlCompositor::grabSurface(QWaylandSurfaceGrabber *grabber,
-                const QWaylandBufferRef &buffer)
+                                const QWaylandBufferRef &buffer)
 {
     if (buffer.isSharedMemory()) {
         emit grabber->success(buffer.image());
@@ -699,7 +694,7 @@ void CwlCompositor::grabSurface(QWaylandSurfaceGrabber *grabber,
             blitter.create();
 
             glViewport(0, 0, buffer.size().width(),
-                   buffer.size().height());
+                       buffer.size().height());
             glClearColor(0.f, 0.f, 0.f, 0.f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -712,7 +707,7 @@ void CwlCompositor::grabSurface(QWaylandSurfaceGrabber *grabber,
             auto texture = buffer.toOpenGLTexture();
             blitter.bind(texture->target());
             blitter.blit(texture->textureId(), QMatrix4x4(),
-                     surfaceOrigin);
+                         surfaceOrigin);
             blitter.release();
 
             emit grabber->success(fbo.toImage());

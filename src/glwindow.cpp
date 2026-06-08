@@ -24,7 +24,7 @@ void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
     m_cwlcompositor = cwlcompositor;
     if (m_gesture)
         delete m_gesture;
-    
+
     // Safety: ensure we don't pass 0,0 to the gesture handler
     int w = width() > 0 ? width() : 720;
     int h = height() > 0 ? height() : 1280;
@@ -41,13 +41,23 @@ void GlWindow::resizeEvent(QResizeEvent *ev)
             QWaylandOutputMode mode(newSize, 60000);
             m_cwlcompositor->defaultOutput()->addMode(mode, true);
             m_cwlcompositor->defaultOutput()->setCurrentMode(mode);
-            
+
             // Re-sync gesture area to new size
             if (m_gesture) {
                 delete m_gesture;
                 m_gesture = new CwlGesture(m_cwlcompositor, newSize);
             }
         }
+    }
+}
+
+void GlWindow::scheduleUpdate()
+{
+    // Only call requestUpdate() if there isn't already one pending.
+    // m_pendingUpdate is atomic so this is safe across the main thread
+    // (writers) and the render thread (reader/clearer in paintGL).
+    if (!m_pendingUpdate.exchange(true)) {
+        requestUpdate();
     }
 }
 
@@ -63,7 +73,7 @@ void GlWindow::setDisplayOff(bool displayOff)
 
     QGuiApplication::primaryScreen()->handle()->setPowerState(
         displayOff ? QPlatformScreen::PowerStateOff :
-                 QPlatformScreen::PowerStateOn);
+                     QPlatformScreen::PowerStateOn);
 
     if (displayOff) {
         if (m_cwlcompositor) {
@@ -71,7 +81,7 @@ void GlWindow::setDisplayOff(bool displayOff)
             m_cwlcompositor->onHideKeyboard();
         }
     } else
-        requestUpdate();
+        scheduleUpdate();
 
     m_displayOff = displayOff;
     emit displayOffChanged(m_displayOff);
@@ -85,6 +95,10 @@ void GlWindow::initializeGL()
 
 void GlWindow::paintGL()
 {
+    // Clear the flag first so any damage that arrives while we are
+    // painting will schedule a fresh update rather than being dropped.
+    m_pendingUpdate.store(false);
+
     if (m_displayOff || !m_cwlcompositor)
         return;
     m_cwlcompositor->startRender();
@@ -101,7 +115,7 @@ void GlWindow::paintGL()
     QList<CwlView *> renderViews;
     if (m_cwlcompositor->m_launcherView)
         renderViews = m_cwlcompositor->getViews()
-                  << m_cwlcompositor->m_launcherView;
+                      << m_cwlcompositor->m_launcherView;
     else
         renderViews = m_cwlcompositor->getViews();
 
@@ -168,7 +182,7 @@ void GlWindow::renderView(CwlView *view)
             QOpenGLTextureBlitter::targetTransform(
                 targetRect, QRect(QPoint(), size()));
         m_textureBlitter.blit(texture->textureId(), targetTransform,
-                      surfaceOrigin);
+                              surfaceOrigin);
     }
 
     if (view->getChildViews().size() > 0) {
@@ -198,7 +212,7 @@ void GlWindow::mousePressEvent(QMouseEvent *ev)
     if (!m_gesture || !m_cwlcompositor) return;
     Qt::MouseButton btn = ev->button();
     m_gesture->handlePointerEvent(ev, [this,
-                       btn](QList<QEventPoint> points) {
+                                       btn](QList<QEventPoint> points) {
         m_cwlcompositor->handleMousePressEvent(points, btn);
     });
 }
@@ -208,7 +222,7 @@ void GlWindow::mouseReleaseEvent(QMouseEvent *ev)
     if (!m_gesture || !m_cwlcompositor) return;
     Qt::MouseButton btn = ev->button();
     m_gesture->handlePointerEvent(ev, [this,
-                       btn](QList<QEventPoint> points) {
+                                       btn](QList<QEventPoint> points) {
         m_cwlcompositor->handleMouseReleaseEvent(points, btn);
     });
 }
@@ -226,7 +240,7 @@ void GlWindow::keyPressEvent(QKeyEvent *event)
 
     if (event->key() == Qt::Key_VolumeDown)
         m_cwlcompositor->specialKey(
-            CutieShell::SpecialKey::VOLUME_DOWN_PRESS);     
+            CutieShell::SpecialKey::VOLUME_DOWN_PRESS);
 }
 
 void GlWindow::keyReleaseEvent(QKeyEvent *event)
