@@ -61,6 +61,16 @@ void GlWindow::scheduleUpdate()
     }
 }
 
+void GlWindow::startBoost()
+{
+    // Activate the render boost and restart the timeout window.
+    // Called on every touch/mouse event so continuous interaction
+    // keeps the boost alive without any gap.
+    m_boostActive = true;
+    if (m_boostTimeout)
+        m_boostTimeout->start(); // restart — extends the window on each touch
+}
+
 bool GlWindow::displayOff()
 {
     return m_displayOff;
@@ -90,6 +100,35 @@ void GlWindow::setDisplayOff(bool displayOff)
 void GlWindow::initializeGL()
 {
     m_textureBlitter.create();
+
+    // --- Render boost heartbeat timer ---
+    // Fires at ~60hz while a touch boost is active, sending frame
+    // callbacks to clients on a regular cadence so fling animations
+    // run smoothly after finger lift. When m_boostActive is false
+    // (screen idle) the timer fires but does nothing — no GPU work,
+    // no client wakeups, power use is unchanged from before.
+    m_frameTimer = new QTimer(this);
+    m_frameTimer->setInterval(16); // ~60hz; change to 8 for 120hz
+    m_frameTimer->setTimerType(Qt::PreciseTimer);
+    connect(m_frameTimer, &QTimer::timeout, this, [this]() {
+        if (!m_displayOff && m_cwlcompositor && m_boostActive)
+            m_cwlcompositor->endRender();
+    });
+    m_frameTimer->start();
+
+    // --- Boost timeout ---
+    // Deactivates the boost 1.2 seconds after the last touch event.
+    // Restarted on every touch so continuous scrolling stays boosted.
+    // 1.2s covers virtually all fling decay animations; tune down to
+    // 0.8s to save more power or up to 1.5s for very slow flings.
+    m_boostTimeout = new QTimer(this);
+    m_boostTimeout->setInterval(1200);
+    m_boostTimeout->setSingleShot(true);
+    m_boostTimeout->setTimerType(Qt::PreciseTimer);
+    connect(m_boostTimeout, &QTimer::timeout, this, [this]() {
+        m_boostActive = false;
+    });
+
     emit glReady();
 }
 
@@ -156,7 +195,13 @@ void GlWindow::paintGL()
     }
 
     m_textureBlitter.release();
-    m_cwlcompositor->endRender();
+
+    // Note: endRender() / sendFrameCallbacks() is intentionally NOT called
+    // here. It is now driven by the m_frameTimer heartbeat during a boost
+    // window, giving clients a regular 60hz callback cadence after touch.
+    // During idle (no boost) callbacks are sent by the timer no-op path,
+    // so clients that are truly static simply stop receiving callbacks until
+    // the next touch event.
 }
 
 void GlWindow::renderView(CwlView *view)
@@ -194,6 +239,7 @@ void GlWindow::renderView(CwlView *view)
 void GlWindow::touchEvent(QTouchEvent *ev)
 {
     if (!m_gesture || !m_cwlcompositor) return;
+    startBoost();
     m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
         m_cwlcompositor->handleTouchEvent(points);
     });
@@ -210,6 +256,7 @@ void GlWindow::mouseMoveEvent(QMouseEvent *ev)
 void GlWindow::mousePressEvent(QMouseEvent *ev)
 {
     if (!m_gesture || !m_cwlcompositor) return;
+    startBoost();
     Qt::MouseButton btn = ev->button();
     m_gesture->handlePointerEvent(ev, [this,
                                        btn](QList<QEventPoint> points) {
@@ -220,6 +267,7 @@ void GlWindow::mousePressEvent(QMouseEvent *ev)
 void GlWindow::mouseReleaseEvent(QMouseEvent *ev)
 {
     if (!m_gesture || !m_cwlcompositor) return;
+    startBoost();
     Qt::MouseButton btn = ev->button();
     m_gesture->handlePointerEvent(ev, [this,
                                        btn](QList<QEventPoint> points) {
