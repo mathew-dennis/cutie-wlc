@@ -59,12 +59,13 @@ class GlWindow : public QOpenGLWindow {
     // and read/cleared from the render thread (threaded render loop)
     std::atomic<bool> m_pendingUpdate{false};
 
-    // Render boost: keeps frame callbacks firing at 60hz for a short
-    // window after the last touch event, giving fling animations a
-    // regular cadence without burning GPU when the screen is idle.
+    // Render boost: fires frame callbacks at 60hz for a short window
+    // after the last touch event, giving fling animations a regular
+    // cadence without burning GPU when the screen is idle.
+    // m_frameTimer is stopped during idle and restarted by startBoost().
     bool m_boostActive = false;
-    QTimer *m_frameTimer = nullptr;   // 16ms heartbeat, runs while boost active
-    QTimer *m_boostTimeout = nullptr; // turns boost off after inactivity
+    QTimer *m_frameTimer = nullptr;   // 16ms heartbeat, stopped when idle
+    QTimer *m_boostTimeout = nullptr; // single-shot, deactivates boost after 1.2s
 
     CwlCompositor *m_cwlcompositor = nullptr;
     CwlGesture *m_gesture = nullptr;
