@@ -69,16 +69,13 @@ void GlWindow::startBoost()
     if (!m_boostTimeout || !m_frameTimer)
         return;
 
-    // Activate the boost flag so the timer lambda starts calling endRender().
     m_boostActive = true;
 
-    // Restart the inactivity timeout — extends the window on every touch
-    // so continuous scrolling stays boosted without any gap.
+    // Restart the inactivity timeout on every touch so continuous
+    // scrolling keeps the boost alive without any gap.
     m_boostTimeout->start();
 
-    // FIX: restart m_frameTimer if it was stopped during the previous idle
-    // period. Without this, after the first boost window expires and the
-    // timer is stopped, no subsequent touch event would ever get a boost.
+    // Restart the heartbeat if it was stopped during the previous idle period.
     if (!m_frameTimer->isActive())
         m_frameTimer->start();
 }
@@ -114,33 +111,33 @@ void GlWindow::initializeGL()
     m_textureBlitter.create();
 
     // --- Render boost heartbeat timer ---
-    // Sends frame callbacks to Wayland clients at ~60hz while a boost
-    // window is active. The timer is stopped during idle so it consumes
-    // no resources when the screen is static. startBoost() restarts it
-    // on the next touch event.
+    // Fired at ~60hz during an active boost window.
+    // Two things must happen every tick:
+    //   1. endRender()    — sends wl_frame callbacks to clients, telling
+    //                       them to submit their next animation frame
+    //   2. scheduleUpdate() — triggers paintGL() so those new frames
+    //                         actually get painted to the screen
+    // Both are required. endRender() alone gives clients the green light
+    // but nothing repaints the screen. scheduleUpdate() alone repaints
+    // the screen but clients never know to submit new frames — fling
+    // animations stall immediately after finger lift.
     //
-    // FIX: the lambda calls endRender() — NOT scheduleUpdate(). These do
-    // different things:
-    //   scheduleUpdate() → triggers a compositor repaint (GPU work)
-    //   endRender()      → sends wl_frame callbacks to clients so they
-    //                       can submit their next animation frame
-    // The fling stutter fix requires the latter — clients need a regular
-    // callback cadence to drive their kinetic scroll deceleration.
+    // The timer starts stopped and is only running during an active boost
+    // window. startBoost() restarts it on each touch event.
     m_frameTimer = new QTimer(this);
     m_frameTimer->setInterval(16); // ~60hz; reduce to 8 for 120hz displays
     m_frameTimer->setTimerType(Qt::PreciseTimer);
     connect(m_frameTimer, &QTimer::timeout, this, [this]() {
-        if (!m_displayOff && m_cwlcompositor && m_boostActive)
-            m_cwlcompositor->endRender();
+        if (!m_displayOff && m_cwlcompositor && m_boostActive) {
+            m_cwlcompositor->endRender();  // signal clients to submit next frame
+            scheduleUpdate();              // repaint screen with submitted frames
+        }
     });
-    // Start stopped — only runs during an active boost window.
-    // startBoost() will start it on first touch.
+    // Intentionally not started here — starts on first touch via startBoost()
 
     // --- Boost inactivity timeout ---
-    // Deactivates the boost and stops the frame timer 1.2 seconds after
-    // the last user interaction. This covers virtually all fling decay
-    // animations. Single-shot so it only fires once per touch sequence;
-    // startBoost() restarts it on each new touch to extend the window.
+    // Deactivates boost and stops the heartbeat 1.2 seconds after the
+    // last touch event. Covers virtually all fling decay animations.
     // Tune: 0.8s saves more power, 1.5s covers very slow flings.
     m_boostTimeout = new QTimer(this);
     m_boostTimeout->setInterval(1200);
@@ -148,8 +145,6 @@ void GlWindow::initializeGL()
     m_boostTimeout->setTimerType(Qt::PreciseTimer);
     connect(m_boostTimeout, &QTimer::timeout, this, [this]() {
         m_boostActive = false;
-        // Stop the heartbeat timer during idle — zero wakeups, zero
-        // client callbacks, minimal power draw until next touch.
         if (m_frameTimer)
             m_frameTimer->stop();
     });
@@ -221,10 +216,9 @@ void GlWindow::paintGL()
 
     m_textureBlitter.release();
 
-    // endRender() / sendFrameCallbacks() is intentionally NOT called here.
-    // It is owned exclusively by m_frameTimer during active boost windows.
-    // This gives clients a steady 60hz callback cadence for fling animations
-    // while keeping idle screens completely quiet.
+    // endRender() is NOT called here — owned by m_frameTimer during boost.
+    // During idle (boost inactive) the timer is stopped so no unnecessary
+    // callbacks or repaints occur.
 }
 
 void GlWindow::renderView(CwlView *view)
