@@ -14,7 +14,7 @@ QT_BEGIN_NAMESPACE
 
 class GlWindow : public QOpenGLWindow {
     Q_OBJECT
-    public:
+public:
     GlWindow();
     void setCompositor(CwlCompositor *cwlcompositor);
     bool displayOff();
@@ -26,18 +26,15 @@ class GlWindow : public QOpenGLWindow {
         return m_gesture;
     }
 
-    signals:
+signals:
     void glReady();
     void displayOffChanged(bool displayOff);
 
-    protected:
+protected:
     void initializeGL() override;
     void paintGL() override;
-
-    // --- MINIMAL FIX: Added declaration ---
     void resizeEvent(QResizeEvent *ev) override;
-    // --------------------------------------
-
+    
     void touchEvent(QTouchEvent *ev) override;
     void mouseMoveEvent(QMouseEvent *ev) override;
     void mousePressEvent(QMouseEvent *ev) override;
@@ -45,8 +42,10 @@ class GlWindow : public QOpenGLWindow {
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
 
-    private:
+private:
     void renderView(CwlView *view);
+    int getScreenRefreshRate() const;
+    void updateTimerInterval();
 
     QOpenGLTextureBlitter m_textureBlitter;
     GLenum m_currentTarget;
@@ -55,17 +54,12 @@ class GlWindow : public QOpenGLWindow {
     QList<QEventPoint *> m_evPoint;
     bool m_displayOff = false;
 
-    // Atomic so it can be safely written from the main thread
-    // and read/cleared from the render thread (threaded render loop)
+    // Thread-safe swap flag between main loop and rendering worker
     std::atomic<bool> m_pendingUpdate{false};
 
-    // Render boost: fires frame callbacks at 60hz for a short window
-    // after the last touch event, giving fling animations a regular
-    // cadence without burning GPU when the screen is idle.
-    // m_frameTimer is stopped during idle and restarted by startBoost().
     bool m_boostActive = false;
-    QTimer *m_frameTimer = nullptr;   // 16ms heartbeat, stopped when idle
-    QTimer *m_boostTimeout = nullptr; // single-shot, deactivates boost after 1.2s
+    QTimer *m_frameTimer = nullptr;   // Dynamically matched interval heartbeat
+    QTimer *m_boostTimeout = nullptr; // Controls the active window decay boundary
 
     CwlCompositor *m_cwlcompositor = nullptr;
     CwlGesture *m_gesture = nullptr;

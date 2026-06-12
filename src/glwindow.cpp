@@ -25,24 +25,47 @@ void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
     if (m_gesture)
         delete m_gesture;
 
-    // Safety: ensure we don't pass 0,0 to the gesture handler
     int w = width() > 0 ? width() : 720;
     int h = height() > 0 ? height() : 1280;
     m_gesture = new CwlGesture(cwlcompositor, QSize(w, h));
 }
 
-// --- Handle window resizing ---
+int GlWindow::getScreenRefreshRate() const
+{
+    if (m_cwlcompositor && m_cwlcompositor->defaultOutput()) {
+        QWaylandOutputMode currentMode = m_cwlcompositor->defaultOutput()->currentMode();
+        if (currentMode.isValid()) {
+            int hz = currentMode.refreshRate() / 1000;
+            return hz > 0 ? hz : 60;
+        }
+    }
+    return 60;
+}
+
+void GlWindow::updateTimerInterval()
+{
+    if (!m_frameTimer) return;
+    
+    int hz = getScreenRefreshRate();
+    int intervalMs = 1000 / hz; 
+    m_frameTimer->setInterval(intervalMs);
+}
+
 void GlWindow::resizeEvent(QResizeEvent *ev)
 {
     QOpenGLWindow::resizeEvent(ev);
     if (m_cwlcompositor && m_cwlcompositor->defaultOutput()) {
         QSize newSize = ev->size();
         if (newSize.width() > 0 && newSize.height() > 0) {
-            QWaylandOutputMode mode(newSize, 60000);
+            // FIX: Preserve the screen's actual refresh rate instead of forcing 60Hz
+            int currentMilliHz = getScreenRefreshRate() * 1000;
+            QWaylandOutputMode mode(newSize, currentMilliHz); 
+            
             m_cwlcompositor->defaultOutput()->addMode(mode, true);
             m_cwlcompositor->defaultOutput()->setCurrentMode(mode);
 
-            // Re-sync gesture area to new size
+            updateTimerInterval();
+
             if (m_gesture) {
                 delete m_gesture;
                 m_gesture = new CwlGesture(m_cwlcompositor, newSize);
@@ -53,9 +76,6 @@ void GlWindow::resizeEvent(QResizeEvent *ev)
 
 void GlWindow::scheduleUpdate()
 {
-    // Only call requestUpdate() if there isn't already one pending.
-    // m_pendingUpdate is atomic so this is safe across the main thread
-    // (writers) and the render thread (reader/clearer in paintGL).
     if (!m_pendingUpdate.exchange(true)) {
         requestUpdate();
     }
@@ -63,19 +83,13 @@ void GlWindow::scheduleUpdate()
 
 void GlWindow::startBoost()
 {
-    // Defensive guard: timers are created in initializeGL() which runs
-    // after the GL context is ready. Touch events can theoretically arrive
-    // before that in rare race conditions.
     if (!m_boostTimeout || !m_frameTimer)
         return;
 
     m_boostActive = true;
-
-    // Restart the inactivity timeout on every touch so continuous
-    // scrolling keeps the boost alive without any gap.
+    updateTimerInterval();
     m_boostTimeout->start();
 
-    // Restart the heartbeat if it was stopped during the previous idle period.
     if (!m_frameTimer->isActive())
         m_frameTimer->start();
 }
@@ -99,8 +113,9 @@ void GlWindow::setDisplayOff(bool displayOff)
             m_cwlcompositor->setLauncherPosition(0.0);
             m_cwlcompositor->onHideKeyboard();
         }
-    } else
+    } else {
         scheduleUpdate();
+    }
 
     m_displayOff = displayOff;
     emit displayOffChanged(m_displayOff);
@@ -110,43 +125,30 @@ void GlWindow::initializeGL()
 {
     m_textureBlitter.create();
 
-    // --- Render boost heartbeat timer ---
-    // Fired at ~60hz during an active boost window.
-    // Two things must happen every tick:
-    //   1. endRender()    — sends wl_frame callbacks to clients, telling
-    //                       them to submit their next animation frame
-    //   2. scheduleUpdate() — triggers paintGL() so those new frames
-    //                         actually get painted to the screen
-    // Both are required. endRender() alone gives clients the green light
-    // but nothing repaints the screen. scheduleUpdate() alone repaints
-    // the screen but clients never know to submit new frames — fling
-    // animations stall immediately after finger lift.
-    //
-    // The timer starts stopped and is only running during an active boost
-    // window. startBoost() restarts it on each touch event.
     m_frameTimer = new QTimer(this);
-    m_frameTimer->setInterval(16); // ~60hz; reduce to 8 for 120hz displays
     m_frameTimer->setTimerType(Qt::PreciseTimer);
+    updateTimerInterval();
+    
     connect(m_frameTimer, &QTimer::timeout, this, [this]() {
         if (!m_displayOff && m_cwlcompositor && m_boostActive) {
-            m_cwlcompositor->endRender();  // signal clients to submit next frame
-            scheduleUpdate();              // repaint screen with submitted frames
+            m_cwlcompositor->endRender(); 
+            scheduleUpdate();             
         }
     });
-    // Intentionally not started here — starts on first touch via startBoost()
 
-    // --- Boost inactivity timeout ---
-    // Deactivates boost and stops the heartbeat 1.2 seconds after the
-    // last touch event. Covers virtually all fling decay animations.
-    // Tune: 0.8s saves more power, 1.5s covers very slow flings.
     m_boostTimeout = new QTimer(this);
     m_boostTimeout->setInterval(1200);
     m_boostTimeout->setSingleShot(true);
     m_boostTimeout->setTimerType(Qt::PreciseTimer);
+    
     connect(m_boostTimeout, &QTimer::timeout, this, [this]() {
         m_boostActive = false;
-        if (m_frameTimer)
-            m_frameTimer->stop();
+        m_frameTimer->stop();
+        
+        if (!m_displayOff && m_cwlcompositor) {
+            m_cwlcompositor->endRender();
+            requestUpdate(); 
+        }
     });
 
     emit glReady();
@@ -154,8 +156,6 @@ void GlWindow::initializeGL()
 
 void GlWindow::paintGL()
 {
-    // Clear the flag first so any damage that arrives while we are
-    // painting will schedule a fresh update rather than being dropped.
     m_pendingUpdate.store(false);
 
     if (m_displayOff || !m_cwlcompositor)
@@ -171,44 +171,33 @@ void GlWindow::paintGL()
     functions->glEnable(GL_BLEND);
     functions->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    QList<CwlView *> renderViews;
-    if (m_cwlcompositor->m_launcherView)
-        renderViews = m_cwlcompositor->getViews()
-                      << m_cwlcompositor->m_launcherView;
-    else
-        renderViews = m_cwlcompositor->getViews();
+    QList<CwlView *> renderViews = m_cwlcompositor->getViews();
+    if (m_cwlcompositor->m_launcherView) {
+        renderViews << m_cwlcompositor->m_launcherView;
+    }
+
+    const int winHeight = height() > 0 ? height() : 1280;
+    const float scale = m_cwlcompositor->scaleFactor();
 
     for (CwlView *view : renderViews) {
-        if (!view) continue; // Safety check
-        QString appId;
-        if (view->isToplevel())
-            appId = view->getAppId();
+        if (!view) continue;
+        
+        bool isToplevel = view->isToplevel();
+        QString appId = isToplevel ? view->getAppId() : QString();
 
-        int winHeight = height() > 0 ? height() : 1280;
-
-        if (appId == "cutie-launcher")
-            m_textureBlitter.setOpacity(
-                1.0 -
-                (m_cwlcompositor->m_launcherView->getPosition()
-                     .y() *
-                 m_cwlcompositor->scaleFactor() / winHeight));
-        else if (view->isToplevel())
-            if (m_cwlcompositor->launcherPosition() > 0.0)
-                m_textureBlitter.setOpacity(
-                    m_cwlcompositor->blur() *
-                    m_cwlcompositor->m_launcherView
-                        ->getPosition()
-                        .y() *
-                    m_cwlcompositor->scaleFactor() /
-                    winHeight);
-            else
-                m_textureBlitter.setOpacity(
-                    m_cwlcompositor->blur());
-        else
+        if (appId == "cutie-launcher") {
+            m_textureBlitter.setOpacity(1.0 - (m_cwlcompositor->m_launcherView->getPosition().y() * scale / winHeight));
+        } else if (isToplevel) {
+            if (m_cwlcompositor->launcherPosition() > 0.0) {
+                m_textureBlitter.setOpacity(m_cwlcompositor->blur() * m_cwlcompositor->m_launcherView->getPosition().y() * scale / winHeight);
+            } else {
+                m_textureBlitter.setOpacity(m_cwlcompositor->blur());
+            }
+        } else {
             m_textureBlitter.setOpacity(1.0);
+        }
 
-        if (m_cwlcompositor->launcherPosition() == 1.0 &&
-            view->layer == CwlViewLayer::TOP)
+        if (m_cwlcompositor->launcherPosition() == 1.0 && view->layer == CwlViewLayer::TOP)
             continue;
 
         renderView(view);
@@ -216,17 +205,17 @@ void GlWindow::paintGL()
 
     m_textureBlitter.release();
 
-    // endRender() is NOT called here — owned by m_frameTimer during boost.
-    // During idle (boost inactive) the timer is stopped so no unnecessary
-    // callbacks or repaints occur.
+    if (!m_boostActive && m_cwlcompositor) {
+        m_cwlcompositor->endRender();
+    }
 }
 
 void GlWindow::renderView(CwlView *view)
 {
     if (!view) return;
     QOpenGLTexture *texture = view->getTexture();
-    if (!texture)
-        return;
+    if (!texture) return;
+    
     if (texture->target() != m_currentTarget) {
         m_currentTarget = texture->target();
         m_textureBlitter.bind(m_currentTarget);
@@ -240,16 +229,14 @@ void GlWindow::renderView(CwlView *view)
         int scale = m_cwlcompositor->scaleFactor();
         QRectF targetRect(viewPosition * scale, viewSize * scale);
 
-        QMatrix4x4 targetTransform =
-            QOpenGLTextureBlitter::targetTransform(
-                targetRect, QRect(QPoint(), size()));
-        m_textureBlitter.blit(texture->textureId(), targetTransform,
-                              surfaceOrigin);
+        QMatrix4x4 targetTransform = 
+        QOpenGLTextureBlitter::targetTransform(
+            targetRect, QRect(QPoint(), size()));
+        m_textureBlitter.blit(texture->textureId(), targetTransform, surfaceOrigin);
     }
 
-    if (view->getChildViews().size() > 0) {
-        for (CwlView *childView : view->getChildViews())
-            renderView(childView);
+    for (CwlView *childView : view->getChildViews()) {
+        renderView(childView);
     }
 }
 
@@ -276,8 +263,7 @@ void GlWindow::mousePressEvent(QMouseEvent *ev)
     if (!m_gesture || !m_cwlcompositor) return;
     startBoost();
     Qt::MouseButton btn = ev->button();
-    m_gesture->handlePointerEvent(ev, [this,
-                                       btn](QList<QEventPoint> points) {
+    m_gesture->handlePointerEvent(ev, [this, btn](QList<QEventPoint> points) {
         m_cwlcompositor->handleMousePressEvent(points, btn);
     });
 }
@@ -287,8 +273,7 @@ void GlWindow::mouseReleaseEvent(QMouseEvent *ev)
     if (!m_gesture || !m_cwlcompositor) return;
     startBoost();
     Qt::MouseButton btn = ev->button();
-    m_gesture->handlePointerEvent(ev, [this,
-                                       btn](QList<QEventPoint> points) {
+    m_gesture->handlePointerEvent(ev, [this, btn](QList<QEventPoint> points) {
         m_cwlcompositor->handleMouseReleaseEvent(points, btn);
     });
 }
@@ -297,30 +282,24 @@ void GlWindow::keyPressEvent(QKeyEvent *event)
 {
     if (!m_cwlcompositor) return;
     if (event->key() == Qt::Key_PowerOff)
-        m_cwlcompositor->specialKey(
-            CutieShell::SpecialKey::POWER_PRESS);
+        m_cwlcompositor->specialKey(CutieShell::SpecialKey::POWER_PRESS);
 
     if (event->key() == Qt::Key_VolumeUp)
-        m_cwlcompositor->specialKey(
-            CutieShell::SpecialKey::VOLUME_UP_PRESS);
+        m_cwlcompositor->specialKey(CutieShell::SpecialKey::VOLUME_UP_PRESS);
 
     if (event->key() == Qt::Key_VolumeDown)
-        m_cwlcompositor->specialKey(
-            CutieShell::SpecialKey::VOLUME_DOWN_PRESS);
+        m_cwlcompositor->specialKey(CutieShell::SpecialKey::VOLUME_DOWN_PRESS);
 }
 
 void GlWindow::keyReleaseEvent(QKeyEvent *event)
 {
     if (!m_cwlcompositor) return;
     if (event->key() == Qt::Key_PowerOff)
-        m_cwlcompositor->specialKey(
-            CutieShell::SpecialKey::POWER_RELEASE);
+        m_cwlcompositor->specialKey(CutieShell::SpecialKey::POWER_RELEASE);
 
     if (event->key() == Qt::Key_VolumeUp)
-        m_cwlcompositor->specialKey(
-            CutieShell::SpecialKey::VOLUME_UP_RELEASE);
+        m_cwlcompositor->specialKey(CutieShell::SpecialKey::VOLUME_UP_RELEASE);
 
     if (event->key() == Qt::Key_VolumeDown)
-        m_cwlcompositor->specialKey(
-            CutieShell::SpecialKey::VOLUME_DOWN_RELEASE);
+        m_cwlcompositor->specialKey(CutieShell::SpecialKey::VOLUME_DOWN_RELEASE);
 }
