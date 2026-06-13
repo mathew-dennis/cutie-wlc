@@ -131,8 +131,7 @@ void GlWindow::initializeGL()
     
     connect(m_frameTimer, &QTimer::timeout, this, [this]() {
         if (!m_displayOff && m_cwlcompositor && m_boostActive) {
-            m_cwlcompositor->endRender(); 
-            scheduleUpdate();             
+            scheduleUpdate();
         }
     });
 
@@ -144,10 +143,9 @@ void GlWindow::initializeGL()
     connect(m_boostTimeout, &QTimer::timeout, this, [this]() {
         m_boostActive = false;
         m_frameTimer->stop();
-        
+
         if (!m_displayOff && m_cwlcompositor) {
-            m_cwlcompositor->endRender();
-            requestUpdate(); 
+            requestUpdate();
         }
     });
 
@@ -205,7 +203,7 @@ void GlWindow::paintGL()
 
     m_textureBlitter.release();
 
-    if (!m_boostActive && m_cwlcompositor) {
+    if (m_cwlcompositor) {
         m_cwlcompositor->endRender();
     }
 }
