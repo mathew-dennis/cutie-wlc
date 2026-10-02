@@ -5,6 +5,7 @@
 #include <screencopy.h>
 #include <foreign-toplevel-management.h>
 #include <input-method-v2.h>
+#include <background-effect.h>
 
 #include <QtWaylandCompositor/QWaylandSeat>
 #include <QWaylandPointer>
@@ -73,6 +74,7 @@ void CwlCompositor::create()
 	m_outputManager = new OutputManagerV1(this);
 	m_outputPowerManager = new OutputPowerManagerV1(this);
 	m_screencopyManager = new ScreencopyManagerV1(this);
+	m_bgEffectManager = new BackgroundEffectManagerV1(this);
 
 	m_foreignTlManagerV1 = new ForeignToplevelManagerV1(this);
 	connect(m_workspace, &CwlWorkspace::toplevelCreated,
@@ -581,6 +583,12 @@ void CwlCompositor::viewSurfaceDestroyed()
 
 	delete view;
 	triggerRender();
+}
+
+QRegion CwlCompositor::blurRegion(QWaylandSurface *surface)
+{
+	return m_bgEffectManager ? m_bgEffectManager->blurRegion(surface) :
+				   QRegion();
 }
 
 void CwlCompositor::triggerRender()

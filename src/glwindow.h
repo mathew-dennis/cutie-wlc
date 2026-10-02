@@ -6,6 +6,7 @@
 
 #include <cutie-wlc.h>
 #include <gesture.h>
+#include <blur.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -38,8 +39,10 @@ class GlWindow : public QOpenGLWindow {
 
     private:
 	void renderView(CwlView *view);
+	void blurBehind(const QRegion &region, const QRectF &targetRect);
 
 	QOpenGLTextureBlitter m_textureBlitter;
+	BlurRenderer m_blur;
 	GLenum m_currentTarget;
 	QOpenGLTexture *m_wallpaper = nullptr;
 

@@ -8,6 +8,7 @@ set(CWL_SOURCES
 		cutie-wlc.cpp
 		workspace.cpp
 		glwindow.cpp
+		blur.cpp
 		gesture.cpp)
 
 set(CWL_HEADERS
@@ -15,6 +16,7 @@ set(CWL_HEADERS
 		cutie-wlc.h
 		workspace.h
 		glwindow.h
+		blur.h
 		gesture.h)
 
 set(QML_RESOURCES)
@@ -25,6 +27,11 @@ qt_add_executable(${PROJECT_NAME} ${CWL_SOURCES} ${CWL_HEADERS})
 
 target_include_directories(${PROJECT_NAME} PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/extensions)
+
+# background-effect.cpp reads wl_region through the compositor's private
+# QtWayland::Region (qt6-wayland-private-dev).
+target_include_directories(${PROJECT_NAME} PRIVATE
+	${Qt6WaylandCompositor_PRIVATE_INCLUDE_DIRS})
 
 qt6_generate_wayland_protocol_server_sources(
 ${PROJECT_NAME}
@@ -40,4 +47,5 @@ ${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/text-input-unstable-v3.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-foreign-toplevel-management-unstable-v1.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/input-method-unstable-v2.xml
+        ${CMAKE_CURRENT_SOURCE_DIR}/protocols/ext-background-effect-v1.xml
 )

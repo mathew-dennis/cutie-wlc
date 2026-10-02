@@ -21,6 +21,7 @@ class ScreencopyManagerV1;
 class ForeignToplevelManagerV1;
 class ForeignToplevelHandleV1;
 class InputMethodManagerV2;
+class BackgroundEffectManagerV1;
 
 class CwlCompositor : public QWaylandCompositor {
 	Q_OBJECT
@@ -68,6 +69,8 @@ class CwlCompositor : public QWaylandCompositor {
 
 	CwlView *getHomeView();
 
+	QRegion blurRegion(QWaylandSurface *surface);
+
 	double blur();
 	void setBlur(double blur);
 
@@ -114,6 +117,7 @@ class CwlCompositor : public QWaylandCompositor {
 	QWaylandOutput *m_output = nullptr;
 	QWaylandXdgDecorationManagerV1 *m_xdgdecoration = nullptr;
 	InputMethodManagerV2 *m_inputMngr = nullptr;
+	BackgroundEffectManagerV1 *m_bgEffectManager = nullptr;
 	CwlView *m_homeView = nullptr;
 	CwlView *m_panelView = nullptr;
 

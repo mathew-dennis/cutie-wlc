@@ -52,6 +52,7 @@ void GlWindow::setDisplayOff(bool displayOff)
 void GlWindow::initializeGL()
 {
 	m_textureBlitter.create();
+	m_blur.init();
 	emit glReady();
 }
 
@@ -132,6 +133,10 @@ void GlWindow::renderView(CwlView *view)
 		QRectF targetRect(viewPosition * m_cwlcompositor->scaleFactor(),
 				  viewSize * m_cwlcompositor->scaleFactor());
 
+		QRegion blurRegion = m_cwlcompositor->blurRegion(surface);
+		if (!blurRegion.isEmpty())
+			blurBehind(blurRegion, targetRect);
+
 		QMatrix4x4 targetTransform =
 			QOpenGLTextureBlitter::targetTransform(
 				targetRect, QRect(QPoint(), size()));
@@ -143,6 +148,34 @@ void GlWindow::renderView(CwlView *view)
 		for (CwlView *childView : view->getChildViews())
 			renderView(childView);
 	}
+}
+
+// Blurs what has been drawn so far under the surface-local region of a view.
+void GlWindow::blurBehind(const QRegion &region, const QRectF &targetRect)
+{
+	if (!m_blur.isEnabled())
+		return;
+
+	const int scale = m_cwlcompositor->scaleFactor();
+	const QPoint origin = targetRect.topLeft().toPoint();
+	const QRect visibleRect = targetRect.toAlignedRect().intersected(
+		QRect(QPoint(), size()));
+
+	QRegion glRegion;
+	for (const QRect &r : region) {
+		QRect px(origin.x() + r.x() * scale, origin.y() + r.y() * scale,
+			 r.width() * scale, r.height() * scale);
+		px = px.intersected(visibleRect);
+		if (!px.isEmpty())
+			glRegion += QRect(px.x(), height() - px.y() - px.height(),
+					  px.width(), px.height());
+	}
+	if (glRegion.isEmpty())
+		return;
+
+	m_textureBlitter.release();
+	m_blur.render(glRegion, size(), defaultFramebufferObject());
+	m_textureBlitter.bind(m_currentTarget);
 }
 
 void GlWindow::touchEvent(QTouchEvent *ev)
