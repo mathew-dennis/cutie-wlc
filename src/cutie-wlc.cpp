@@ -18,6 +18,7 @@
 // Temporary frame timing
 static QElapsedTimer s_clock;
 static qint64 s_paintStartNs = 0, s_paintEndNs = 0, s_maxSwapNs = 0;
+static int s_updateRequests = 0;
 
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
@@ -603,6 +604,7 @@ void CwlCompositor::viewSurfaceDestroyed()
 
 void CwlCompositor::triggerRender()
 {
+	s_updateRequests++;
 	m_glwindow->requestUpdate();
 }
 
@@ -643,13 +645,14 @@ void CwlCompositor::endRender()
 	lastNs = now;
 	frames++;
 	if (now - startNs >= 1000000000LL) {
-		qDebug("cutie-wlc: paint %d frames/s, worst gap %.1f ms, worst paintGL %.1f ms, worst swap %.1f ms",
+		qDebug("cutie-wlc: paint %d frames/s, worst gap %.1f ms, worst paintGL %.1f ms, worst swap %.1f ms, update requests %d",
 		       frames, maxGapNs / 1e6, maxPaintNs / 1e6,
-		       s_maxSwapNs / 1e6);
+		       s_maxSwapNs / 1e6, s_updateRequests);
 		frames = 0;
 		maxGapNs = 0;
 		maxPaintNs = 0;
 		s_maxSwapNs = 0;
+		s_updateRequests = 0;
 		startNs = now;
 	}
 }
