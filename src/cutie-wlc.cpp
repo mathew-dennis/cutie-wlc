@@ -15,6 +15,10 @@
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
+// Temporary frame timing
+static QElapsedTimer s_clock;
+static qint64 s_paintStartNs = 0, s_paintEndNs = 0, s_maxSwapNs = 0;
+
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
 	, m_xdgShell(new QWaylandXdgShell(this))
@@ -66,6 +70,10 @@ void CwlCompositor::create()
 		 << mode.refreshRate() << "mHz";
 	m_output->addMode(mode, true);
 	QWaylandCompositor::create();
+	connect(m_glwindow, &QOpenGLWindow::frameSwapped, this, [] {
+		s_maxSwapNs = qMax(s_maxSwapNs,
+				   s_clock.nsecsElapsed() - s_paintEndNs);
+	});
 	m_output->setCurrentMode(mode);
 	m_output->setScaleFactor(m_scaleFactor);
 
@@ -606,9 +614,6 @@ void CwlCompositor::onToplevelDamaged(CwlView *view)
 	m_cutieshell->onThumbnailDamage(view);
 }
 
-static QElapsedTimer s_clock;
-static qint64 s_paintStartNs = 0;
-
 void CwlCompositor::startRender()
 {
 	if (!s_clock.isValid())
@@ -634,14 +639,17 @@ void CwlCompositor::endRender()
 	if (lastNs && now - lastNs < 1000000000LL)
 		maxGapNs = qMax(maxGapNs, now - lastNs);
 	maxPaintNs = qMax(maxPaintNs, now - s_paintStartNs);
+	s_paintEndNs = now;
 	lastNs = now;
 	frames++;
 	if (now - startNs >= 1000000000LL) {
-		qDebug("cutie-wlc: paint %d frames/s, worst gap %.1f ms, worst paintGL %.1f ms",
-		       frames, maxGapNs / 1e6, maxPaintNs / 1e6);
+		qDebug("cutie-wlc: paint %d frames/s, worst gap %.1f ms, worst paintGL %.1f ms, worst swap %.1f ms",
+		       frames, maxGapNs / 1e6, maxPaintNs / 1e6,
+		       s_maxSwapNs / 1e6);
 		frames = 0;
 		maxGapNs = 0;
 		maxPaintNs = 0;
+		s_maxSwapNs = 0;
 		startNs = now;
 	}
 }
