@@ -100,6 +100,8 @@ void CwlView::setHidden(bool hide)
 
 void CwlView::onAvailableGeometryChanged(QRect geometry)
 {
+	if (output() != m_cwlcompositor->defaultOutput())
+		return;
 	m_availableGeometry = geometry;
 	if (layer == TOP) {
 		if (isToplevel()) {
@@ -148,6 +150,16 @@ void CwlView::setTopLevel(QWaylandXdgToplevel *toplevel)
 		&CwlView::onAppIdChanged);
 }
 
+void CwlView::setDesktopOutput(QWaylandOutput *output, const QRect &geometry)
+{
+	QWaylandView::setOutput(output);
+	m_availableGeometry = geometry;
+	if (m_isTopLevel && m_toplevel) {
+		m_toplevel->sendMaximized(geometry.size());
+		setPosition(geometry.topLeft());
+	}
+}
+
 void CwlView::setPopUp(QWaylandXdgPopup *popup)
 {
 	m_xdgPopup = popup;
@@ -192,6 +204,10 @@ void CwlView::onAppIdChanged()
 	if (m_toplevel->appId() == getAppId())
 		return;
 	setAppId();
+	QWaylandOutput *targetOutput =
+		m_cwlcompositor->outputForToplevel(this);
+	setDesktopOutput(targetOutput,
+			 m_cwlcompositor->outputGeometry(targetOutput));
 	if (getAppId() == "cutie-launcher") {
 		layer = OVERLAY;
 		m_cwlcompositor->m_launcherView = this;

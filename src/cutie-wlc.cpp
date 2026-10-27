@@ -7,18 +7,13 @@
 #include <input-method-v2.h>
 
 #include <QtWaylandCompositor/QWaylandSeat>
+#include <QtWaylandCompositor/QWaylandOutput>
+#include <QGuiApplication>
 #include <QWaylandPointer>
 #include <QWaylandTouch>
 #include <QTouchEvent>
-#include <QScreen>
-#include <QElapsedTimer>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
-
-// Temporary frame timing
-static QElapsedTimer s_clock;
-static qint64 s_paintStartNs = 0, s_paintEndNs = 0, s_maxSwapNs = 0;
-static int s_updateRequests = 0;
 
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
@@ -28,6 +23,10 @@ CwlCompositor::CwlCompositor(GlWindow *glwindow)
 {
 	m_glwindow->setCompositor(this);
 	connect(m_glwindow, &GlWindow::glReady, this, &CwlCompositor::create);
+	connect(qGuiApp, &QGuiApplication::screenAdded, this,
+		&CwlCompositor::onScreenAdded);
+	connect(qGuiApp, &QGuiApplication::screenRemoved, this,
+		&CwlCompositor::onScreenRemoved);
 
 	connect(m_xdgShell, &QWaylandXdgShell::toplevelCreated, this,
 		&CwlCompositor::onXdgToplevelCreated);
@@ -59,24 +58,20 @@ CwlCompositor::CwlCompositor(GlWindow *glwindow)
 
 CwlCompositor::~CwlCompositor()
 {
+	for (GlWindow *window : m_externalWindows)
+		delete window;
 }
 
 void CwlCompositor::create()
 {
 	m_output = new QWaylandOutput(this, m_glwindow);
-	qreal hz = m_glwindow->screen()->refreshRate();
-	QWaylandOutputMode mode(m_glwindow->size(),
-				hz >= 1.0 ? qRound(hz * 1000) : 60000);
-	qDebug() << "cutie-wlc: screen reports" << hz << "Hz, output mode"
-		 << mode.refreshRate() << "mHz";
+	QWaylandOutputMode mode(m_glwindow->size(), 60000);
 	m_output->addMode(mode, true);
 	QWaylandCompositor::create();
-	connect(m_glwindow, &QOpenGLWindow::frameSwapped, this, [] {
-		s_maxSwapNs = qMax(s_maxSwapNs,
-				   s_clock.nsecsElapsed() - s_paintEndNs);
-	});
 	m_output->setCurrentMode(mode);
 	m_output->setScaleFactor(m_scaleFactor);
+	m_glwindow->setOutput(m_output);
+	m_created = true;
 
 	m_xdgdecoration->setExtensionContainer(this);
 	m_xdgdecoration->initialize();
@@ -88,6 +83,10 @@ void CwlCompositor::create()
 	m_outputManager = new OutputManagerV1(this);
 	m_outputPowerManager = new OutputPowerManagerV1(this);
 	m_screencopyManager = new ScreencopyManagerV1(this);
+
+	for (QScreen *screen : qGuiApp->screens())
+		if (screen != m_glwindow->screen())
+			onScreenAdded(screen);
 
 	m_foreignTlManagerV1 = new ForeignToplevelManagerV1(this);
 	connect(m_workspace, &CwlWorkspace::toplevelCreated,
@@ -115,7 +114,7 @@ void CwlCompositor::create()
 		Might also be the hwcomposer issue https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html
 	*/
 	qputenv("QSG_NO_VSYNC", QByteArray("1"));
-	qputenv("QSG_RENDER_LOOP", QByteArray("threaded"));
+	qputenv("QSG_RENDER_LOOP", QByteArray("basic"));
 
 	QStringList args = QStringList();
 	args.append("-c");
@@ -164,25 +163,146 @@ QList<CwlView *> CwlCompositor::getToplevelViews()
 	return m_workspace->getToplevelViews();
 }
 
-CwlView *CwlCompositor::viewAt(const QPoint &position)
+QWaylandOutput *CwlCompositor::outputForToplevel(CwlView *view)
 {
-	CwlView *ret = nullptr;
-	for (auto it = getViews().crbegin(); it != getViews().crend(); ++it) {
-		CwlView *view = *it;
-		QRectF geom(view->getPosition(), view->size() * scaleFactor());
-		QPoint checkPoint = position;
+	if (!view || view->getAppId() == "cutie-launcher")
+		return m_output;
+	if (view->getTopLevel() && view->getTopLevel()->parentToplevel()) {
+		CwlView *parent = findTlView(view->getTopLevel()
+						 ->parentToplevel()
+						 ->xdgSurface()
+						 ->surface());
+		if (parent && parent->output())
+			return parent->output();
+	}
+	if (!m_externalOutputs.isEmpty())
+		return m_externalOutputs.constBegin().value();
+	return m_output;
+}
 
-		if (view->getAppId() == "cutie-keyboard")
-			checkPoint = position / scaleFactor();
+QRect CwlCompositor::outputGeometry(QWaylandOutput *output) const
+{
+	if (!output || output == m_output)
+		return m_workspace ? m_workspace->availableGeometry() : QRect();
+	return QRect(output->position(),
+		     output->currentMode().size() / qMax(1, output->scaleFactor()));
+}
+
+void CwlCompositor::onScreenAdded(QScreen *screen)
+{
+	if (!m_created || !screen || screen == m_glwindow->screen() ||
+	    m_externalWindows.contains(screen))
+		return;
+
+	GlWindow *window = new GlWindow();
+	window->setScreen(screen);
+	window->resize(screen->size());
+	window->setCompositor(this);
+	m_externalWindows.insert(screen, window);
+	connect(window, &GlWindow::glReady, this,
+		[this, screen, window]() { createExternalOutput(screen, window); });
+	window->show();
+}
+
+void CwlCompositor::createExternalOutput(QScreen *screen, GlWindow *window)
+{
+	if (!m_created || !screen || !window || m_externalOutputs.contains(screen))
+		return;
+
+	const qreal refreshRate = screen->refreshRate() > 0
+				      ? screen->refreshRate()
+				      : 60.0;
+	QWaylandOutput *output = new QWaylandOutput(this, window);
+	const QWaylandOutputMode mode(window->size(),
+				      static_cast<int>(refreshRate * 1000));
+	output->addMode(mode, true);
+	output->setCurrentMode(mode);
+	output->setScaleFactor(1);
+	output->setPosition(QPoint(m_workspace->outputGeometry().width(), 0));
+	output->setPhysicalSize(screen->physicalSize().toSize());
+	output->setModel(screen->name());
+	m_externalOutputs.insert(screen, output);
+	window->setOutput(output);
+	routeExistingViews(m_output, output);
+	triggerRender();
+	qInfo() << "Cutie: added Wayland output for screen" << screen->name()
+		<< output->geometry();
+}
+
+void CwlCompositor::onScreenRemoved(QScreen *screen)
+{
+	if (!screen)
+		return;
+	QWaylandOutput *output = m_externalOutputs.take(screen);
+	if (!output)
+		return;
+	routeExistingViews(output, m_output);
+	GlWindow *window = m_externalWindows.take(screen);
+	if (window)
+		window->setOutput(nullptr);
+	delete output;
+	if (window) {
+		window->close();
+		delete window;
+	}
+	triggerRender();
+	qInfo() << "Cutie: removed Wayland output for screen" << screen->name();
+}
+
+void CwlCompositor::routeExistingViews(QWaylandOutput *from,
+				       QWaylandOutput *to)
+{
+	if (!from || !to || !m_workspace)
+		return;
+
+	const QRect targetGeometry = outputGeometry(to);
+	for (CwlView *root : m_workspace->getToplevelViews()) {
+		if (root->output() != from || root->getAppId() == "cutie-launcher")
+			continue;
+
+		const QPointF positionDelta =
+			targetGeometry.topLeft() - root->getPosition();
+		QList<CwlView *> pending{root};
+		while (!pending.isEmpty()) {
+			CwlView *view = pending.takeLast();
+			pending.append(view->getChildViews());
+			if (view == root) {
+				view->setDesktopOutput(to, targetGeometry);
+				continue;
+			}
+
+			view->setOutput(to);
+			view->setPosition(view->getPosition() + positionDelta);
+			if (view->isToplevel() && view->getTopLevel())
+				view->getTopLevel()->sendMaximized(targetGeometry.size());
+		}
+	}
+}
+
+CwlView *CwlCompositor::viewAt(const QPoint &position, QWaylandOutput *output)
+{
+	if (!output)
+		output = m_output;
+	const qreal outputScale = qMax(1, output->scaleFactor());
+	const QPointF checkPoint = output->position() +
+				   QPointF(position) / outputScale;
+	CwlView *ret = nullptr;
+	const QList<CwlView *> views = output == m_output ? getViews()
+									 : getToplevelViews();
+	for (auto it = views.crbegin(); it != views.crend(); ++it) {
+		CwlView *view = *it;
+		if (view->output() != output)
+			continue;
+		QRectF geom(view->getPosition(), view->size());
 
 		if (geom.contains(checkPoint)) {
 			if (view->getChildViews().size() > 0) {
 				for (CwlView *childView :
 				     view->getChildViews()) {
-					checkPoint = position / scaleFactor();
+					if (childView->output() != output)
+						continue;
 					QRectF geom(childView->getPosition(),
-						    childView->size() *
-							    scaleFactor());
+						    childView->size());
 					if (geom.contains(checkPoint)) {
 						ret = childView;
 						return ret;
@@ -233,7 +353,7 @@ void CwlCompositor::onXdgToplevelCreated(QWaylandXdgToplevel *toplevel,
 					 QWaylandXdgSurface *xdgSurface)
 {
 	CwlView *view = new CwlView(this, m_workspace->availableGeometry());
-	view->setOutput(outputFor(m_glwindow));
+	view->setOutput(m_output);
 	view->setSurface(xdgSurface->surface());
 
 	view->setTopLevel(toplevel);
@@ -274,11 +394,14 @@ void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 				      QWaylandXdgSurface *xdgSurface)
 {
 	CwlView *view = new CwlView(this, m_workspace->availableGeometry());
-	view->setOutput(outputFor(m_glwindow));
+	view->setOutput(m_output);
 	view->setSurface(xdgSurface->surface());
 	view->setPopUp(popup);
 
 	CwlView *parent_view = findTlView(popup->parentXdgSurface()->surface());
+	if (parent_view)
+		view->setDesktopOutput(parent_view->output(),
+				       outputGeometry(parent_view->output()));
 
 	qDebug() << "Popup " << (uint64_t)view << " created";
 
@@ -304,7 +427,7 @@ void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 {
 	CwlView *view = new CwlView(this, m_workspace->availableGeometry());
-	view->setOutput(outputFor(m_glwindow));
+	view->setOutput(m_output);
 	view->setSurface(layerSurface->surface);
 
 	view->setLayerSurface(layerSurface);
@@ -363,45 +486,60 @@ void CwlCompositor::raise(CwlView *view)
 	triggerRender();
 }
 
-void CwlCompositor::handleTouchEvent(QList<QEventPoint> points)
+void CwlCompositor::handleTouchEvent(QList<QEventPoint> points,
+				     QWaylandOutput *output)
 {
-	CwlView *view = m_launcherView;
-	if (launcherPosition() == 0.0)
-		view = viewAt(points.first().globalPosition().toPoint());
+	if (points.isEmpty())
+		return;
+	if (!output)
+		output = m_output;
+	const qreal outputScale = qMax(1, output->scaleFactor());
+	CwlView *view = output == m_output && launcherPosition() != 0.0
+			? m_launcherView
+			: viewAt(points.first().position().toPoint(), output);
 	if (view == nullptr)
 		return;
 	foreach(QEventPoint point, points) {
 		defaultSeat()->touch()->sendTouchPointEvent(
 			view->surface(), point.id(),
-			point.position() / scaleFactor() - view->getPosition(),
+			output->position() + point.position() / outputScale -
+				view->getPosition(),
 			(Qt::TouchPointState)point.state());
 	}
 	defaultSeat()->touch()->sendFrameEvent(view->surface()->client());
 }
 
-void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points)
+void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points,
+					QWaylandOutput *output)
 {
-	CwlView *view = m_launcherView;
-	if (launcherPosition() == 0.0)
-		view = viewAt(points.first().position().toPoint());
+	if (points.isEmpty())
+		return;
+	if (!output)
+		output = m_output;
+	const qreal outputScale = qMax(1, output->scaleFactor());
+	CwlView *view = output == m_output && launcherPosition() != 0.0
+			? m_launcherView
+			: viewAt(points.first().position().toPoint(), output);
 	if (view == nullptr)
 		return;
 	defaultSeat()->sendMouseMoveEvent(
-		view, points.first().position().toPoint() / scaleFactor() -
+		view, output->position() + points.first().position() / outputScale -
 			      view->getPosition());
 }
 
 void CwlCompositor::handleMousePressEvent(QList<QEventPoint> points,
-					  Qt::MouseButton btn)
+					  Qt::MouseButton btn,
+					  QWaylandOutput *output)
 {
-	handleMouseMoveEvent(points);
+	handleMouseMoveEvent(points, output);
 	defaultSeat()->sendMousePressEvent(btn);
 }
 
 void CwlCompositor::handleMouseReleaseEvent(QList<QEventPoint> points,
-					    Qt::MouseButton btn)
+					    Qt::MouseButton btn,
+					    QWaylandOutput *output)
 {
-	handleMouseMoveEvent(points);
+	handleMouseMoveEvent(points, output);
 	defaultSeat()->sendMouseReleaseEvent(btn);
 }
 
@@ -604,8 +742,10 @@ void CwlCompositor::viewSurfaceDestroyed()
 
 void CwlCompositor::triggerRender()
 {
-	s_updateRequests++;
 	m_glwindow->requestUpdate();
+	for (GlWindow *window : m_externalWindows)
+		if (window)
+			window->requestUpdate();
 }
 
 void CwlCompositor::onToplevelDamaged(CwlView *view)
@@ -618,43 +758,24 @@ void CwlCompositor::onToplevelDamaged(CwlView *view)
 
 void CwlCompositor::startRender()
 {
-	if (!s_clock.isValid())
-		s_clock.start();
-	s_paintStartNs = s_clock.nsecsElapsed();
+	startRender(defaultOutput());
+}
 
-	QWaylandOutput *out = defaultOutput();
+void CwlCompositor::startRender(QWaylandOutput *out)
+{
 	if (out)
 		out->frameStarted();
 }
 
 void CwlCompositor::endRender()
 {
-	QWaylandOutput *out = defaultOutput();
+	endRender(defaultOutput());
+}
+
+void CwlCompositor::endRender(QWaylandOutput *out)
+{
 	if (out)
 		out->sendFrameCallbacks();
-
-	// Temporary: log how fast the compositor itself paints
-	static qint64 lastNs = 0, startNs = 0, maxGapNs = 0, maxPaintNs = 0;
-	static int frames = 0;
-	qint64 now = s_clock.nsecsElapsed();
-	// Gaps over 1 s are idle (nothing to paint), not stalls
-	if (lastNs && now - lastNs < 1000000000LL)
-		maxGapNs = qMax(maxGapNs, now - lastNs);
-	maxPaintNs = qMax(maxPaintNs, now - s_paintStartNs);
-	s_paintEndNs = now;
-	lastNs = now;
-	frames++;
-	if (now - startNs >= 1000000000LL) {
-		qDebug("cutie-wlc: paint %d frames/s, worst gap %.1f ms, worst paintGL %.1f ms, worst swap %.1f ms, update requests %d",
-		       frames, maxGapNs / 1e6, maxPaintNs / 1e6,
-		       s_maxSwapNs / 1e6, s_updateRequests);
-		frames = 0;
-		maxGapNs = 0;
-		maxPaintNs = 0;
-		s_maxSwapNs = 0;
-		s_updateRequests = 0;
-		startNs = now;
-	}
 }
 
 int CwlCompositor::scaleFactor()

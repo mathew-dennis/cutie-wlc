@@ -4,6 +4,7 @@
 #include <QtWaylandCompositor/QWaylandSurface>
 #include <QtWaylandCompositor/QWaylandSurfaceGrabber>
 #include <QtWaylandCompositor/QWaylandView>
+#include <QtWaylandCompositor/QWaylandOutput>
 #include <QtWaylandCompositor/QWaylandXdgSurface>
 #include <QTimer>
 #include <QOpenGLTextureBlitter>
@@ -72,6 +73,7 @@ class CwlView : public QWaylandView {
 	void setParentView(CwlView *view);
 	void setTopLevel(QWaylandXdgToplevel *toplevel);
 	void setPopUp(QWaylandXdgPopup *popup);
+	void setDesktopOutput(QWaylandOutput *output, const QRect &geometry);
 
 	void setAppId();
 

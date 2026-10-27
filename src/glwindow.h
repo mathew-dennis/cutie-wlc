@@ -3,6 +3,7 @@
 #include <QOpenGLWindow>
 #include <QOpenGLTextureBlitter>
 #include <QEventPoint>
+#include <QtWaylandCompositor/QWaylandOutput>
 
 #include <cutie-wlc.h>
 #include <gesture.h>
@@ -14,6 +15,8 @@ class GlWindow : public QOpenGLWindow {
     public:
 	GlWindow();
 	void setCompositor(CwlCompositor *cwlcompositor);
+	void setOutput(QWaylandOutput *output);
+	QWaylandOutput *output() const;
 	bool displayOff();
 	void setDisplayOff(bool displayOff);
 	inline CwlGesture *gesture()
@@ -40,6 +43,7 @@ class GlWindow : public QOpenGLWindow {
 	void renderView(CwlView *view);
 
 	QOpenGLTextureBlitter m_textureBlitter;
+	QWaylandOutput *m_output = nullptr;
 	GLenum m_currentTarget;
 	QOpenGLTexture *m_wallpaper = nullptr;
 
