@@ -10,6 +10,7 @@
 #include <QWaylandPointer>
 #include <QWaylandTouch>
 #include <QTouchEvent>
+#include <QScreen>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
@@ -57,7 +58,11 @@ CwlCompositor::~CwlCompositor()
 void CwlCompositor::create()
 {
 	m_output = new QWaylandOutput(this, m_glwindow);
-	QWaylandOutputMode mode(m_glwindow->size(), 60000);
+	qreal hz = m_glwindow->screen()->refreshRate();
+	QWaylandOutputMode mode(m_glwindow->size(),
+				hz >= 1.0 ? qRound(hz * 1000) : 60000);
+	qDebug() << "cutie-wlc: screen reports" << hz << "Hz, output mode"
+		 << mode.refreshRate() << "mHz";
 	m_output->addMode(mode, true);
 	QWaylandCompositor::create();
 	m_output->setCurrentMode(mode);
