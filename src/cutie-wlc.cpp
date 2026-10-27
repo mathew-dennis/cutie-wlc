@@ -11,6 +11,7 @@
 #include <QWaylandTouch>
 #include <QTouchEvent>
 #include <QScreen>
+#include <QElapsedTimer>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
@@ -617,6 +618,25 @@ void CwlCompositor::endRender()
 	QWaylandOutput *out = defaultOutput();
 	if (out)
 		out->sendFrameCallbacks();
+
+	// Temporary: log how fast the compositor itself paints
+	static QElapsedTimer clock;
+	static qint64 lastNs = 0, startNs = 0, maxGapNs = 0;
+	static int frames = 0;
+	if (!clock.isValid())
+		clock.start();
+	qint64 now = clock.nsecsElapsed();
+	if (lastNs)
+		maxGapNs = qMax(maxGapNs, now - lastNs);
+	lastNs = now;
+	frames++;
+	if (now - startNs >= 1000000000LL) {
+		qDebug("cutie-wlc: paint %d frames/s, worst gap %.1f ms", frames,
+		       maxGapNs / 1e6);
+		frames = 0;
+		maxGapNs = 0;
+		startNs = now;
+	}
 }
 
 int CwlCompositor::scaleFactor()
