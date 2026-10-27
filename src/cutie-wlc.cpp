@@ -11,6 +11,7 @@
 #include <QWaylandTouch>
 #include <QTouchEvent>
 #include <QScreen>
+#include <QElapsedTimer>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
@@ -605,8 +606,15 @@ void CwlCompositor::onToplevelDamaged(CwlView *view)
 	m_cutieshell->onThumbnailDamage(view);
 }
 
+static QElapsedTimer s_clock;
+static qint64 s_paintStartNs = 0;
+
 void CwlCompositor::startRender()
 {
+	if (!s_clock.isValid())
+		s_clock.start();
+	s_paintStartNs = s_clock.nsecsElapsed();
+
 	QWaylandOutput *out = defaultOutput();
 	if (out)
 		out->frameStarted();
@@ -617,6 +625,25 @@ void CwlCompositor::endRender()
 	QWaylandOutput *out = defaultOutput();
 	if (out)
 		out->sendFrameCallbacks();
+
+	// Temporary: log how fast the compositor itself paints
+	static qint64 lastNs = 0, startNs = 0, maxGapNs = 0, maxPaintNs = 0;
+	static int frames = 0;
+	qint64 now = s_clock.nsecsElapsed();
+	// Gaps over 1 s are idle (nothing to paint), not stalls
+	if (lastNs && now - lastNs < 1000000000LL)
+		maxGapNs = qMax(maxGapNs, now - lastNs);
+	maxPaintNs = qMax(maxPaintNs, now - s_paintStartNs);
+	lastNs = now;
+	frames++;
+	if (now - startNs >= 1000000000LL) {
+		qDebug("cutie-wlc: paint %d frames/s, worst gap %.1f ms, worst paintGL %.1f ms",
+		       frames, maxGapNs / 1e6, maxPaintNs / 1e6);
+		frames = 0;
+		maxGapNs = 0;
+		maxPaintNs = 0;
+		startNs = now;
+	}
 }
 
 int CwlCompositor::scaleFactor()
