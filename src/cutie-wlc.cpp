@@ -12,6 +12,7 @@
 #include <QTouchEvent>
 #include <QScreen>
 #include <QElapsedTimer>
+#include <QDateTime>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
@@ -67,8 +68,8 @@ void CwlCompositor::create()
 	qreal hz = m_glwindow->screen()->refreshRate();
 	QWaylandOutputMode mode(m_glwindow->size(),
 				hz >= 1.0 ? qRound(hz * 1000) : 60000);
-	qDebug() << "cutie-wlc: screen reports" << hz << "Hz, output mode"
-		 << mode.refreshRate() << "mHz";
+	qDebug("CUTIE_PERF src=wlc ev=output_mode screen_hz=%.2f mode_mhz=%d",
+	       (double)hz, (int)mode.refreshRate());
 	m_output->addMode(mode, true);
 	QWaylandCompositor::create();
 	connect(m_glwindow, &QOpenGLWindow::frameSwapped, this, [] {
@@ -645,9 +646,12 @@ void CwlCompositor::endRender()
 	lastNs = now;
 	frames++;
 	if (now - startNs >= 1000000000LL) {
-		qDebug("cutie-wlc: paint %d frames/s, worst gap %.1f ms, worst paintGL %.1f ms, worst swap %.1f ms, update requests %d",
-		       frames, maxGapNs / 1e6, maxPaintNs / 1e6,
-		       s_maxSwapNs / 1e6, s_updateRequests);
+		qDebug("CUTIE_PERF src=wlc ev=paint ts_ms=%lld paint_fps=%d "
+		       "worst_gap_ms=%.1f worst_paintgl_ms=%.1f worst_swap_ms=%.1f "
+		       "update_requests=%d",
+		       (long long)QDateTime::currentMSecsSinceEpoch(), frames,
+		       maxGapNs / 1e6, maxPaintNs / 1e6, s_maxSwapNs / 1e6,
+		       s_updateRequests);
 		frames = 0;
 		maxGapNs = 0;
 		maxPaintNs = 0;
