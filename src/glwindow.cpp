@@ -30,7 +30,7 @@ void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
 void GlWindow::setOutput(QWaylandOutput *output)
 {
 	m_output = output;
-	m_lastExternalViewCount = -1;
+	m_lastExternalStackSummary.clear();
 	requestUpdate();
 }
 
@@ -95,29 +95,42 @@ void GlWindow::paintGL()
 	} else {
 		renderViews = m_cwlcompositor->getViewsForOutput(m_output);
 	}
-	if (!primaryOutput && renderViews.size() != m_lastExternalViewCount) {
+	if (!primaryOutput) {
 		QStringList summary;
 		for (CwlView *view : renderViews) {
 			LayerSurfaceV1 *layerSurface = view->getLayerSurface();
+			const QSize surfaceSize = view->size();
+			const QSize bufferSize = view->surface() ?
+				view->surface()->bufferSize() : QSize();
+			const int bufferScale = view->surface() ?
+				view->surface()->bufferScale() : 0;
 			const QString name = layerSurface ?
 				layerSurface->ls_scope :
 				(view->isToplevel() ? view->getAppId() :
 						      QStringLiteral("surface"));
 			summary << QStringLiteral(
-				"%1(layer=%2,size=%3x%4,content=%5,pos=%6,%7)")
+				"%1(layer=%2,size=%3x%4,buffer=%5x%6,scale=%7,content=%8,pos=%9,%10)")
 					.arg(name)
 					.arg(static_cast<int>(view->layer))
-					.arg(view->size().width())
-					.arg(view->size().height())
+					.arg(surfaceSize.width())
+					.arg(surfaceSize.height())
+					.arg(bufferSize.width())
+					.arg(bufferSize.height())
+					.arg(bufferScale)
 					.arg(view->surface() &&
 					     view->surface()->hasContent())
 					.arg(view->getPosition().x())
 					.arg(view->getPosition().y());
 		}
-		qInfo().noquote() << "Cutie: external output render stack"
-				  << m_output->model()
-				  << summary.join(QStringLiteral(", "));
-		m_lastExternalViewCount = renderViews.size();
+		const QString currentSummary =
+			summary.join(QStringLiteral(", "));
+		if (currentSummary != m_lastExternalStackSummary) {
+			qInfo().noquote()
+				<< "Cutie: external output render stack"
+				<< m_output->model() << m_output->geometry()
+				<< currentSummary;
+			m_lastExternalStackSummary = currentSummary;
+		}
 	}
 
 	for (CwlView *view : renderViews) {

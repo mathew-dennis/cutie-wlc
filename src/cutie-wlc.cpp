@@ -192,7 +192,8 @@ QWaylandOutput *CwlCompositor::outputForToplevel(CwlView *view)
 	if (!m_externalOutputs.isEmpty()) {
 		QWaylandOutput *output = m_externalOutputs.constBegin().value();
 		qInfo() << "Cutie: routing app to external output"
-			<< view->getAppId() << output->model();
+			<< view->getAppId() << output->model() << output
+			<< outputGeometry(output);
 		return output;
 	}
 	return m_output;
@@ -211,8 +212,10 @@ void CwlCompositor::onScreenAdded(QScreen *screen)
 	if (!m_created || !screen || screen == m_glwindow->screen() ||
 	    m_externalWindows.contains(screen))
 		return;
-	qInfo() << "Cutie: Qt reported external screen" << screen->name()
-		<< "geometry" << screen->geometry() << "size" << screen->size();
+	qInfo() << "Cutie: Qt reported external screen" << screen
+		<< screen->name() << "geometry" << screen->geometry()
+		<< "size" << screen->size() << "device pixel ratio"
+		<< screen->devicePixelRatio();
 
 	GlWindow *window = new GlWindow();
 	window->setScreen(screen);
@@ -589,7 +592,7 @@ void CwlCompositor::handleMouseReleaseEvent(QList<QEventPoint> points,
 	defaultSeat()->sendMouseReleaseEvent(btn);
 }
 
-bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
+bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int /*corner*/)
 {
 	if (edge == EDGE_LEFT) {
 		if (ev->isBeginEvent()) {
@@ -721,43 +724,6 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 					launcherCloseAnim->start();
 			}
 			return true;
-		}
-	}
-
-	if (corner == CORNER_BR || corner == CORNER_BL) {
-		if (launcherPosition() > 0.0) {
-			return false;
-		}
-
-		if (m_panelView != nullptr)
-			if (m_panelView->panelState > 1)
-				return false;
-
-		if (ev->isBeginEvent() || ev->isUpdateEvent()) {
-			if (m_inputMngr->getInputMethod() != nullptr)
-				if (!m_inputMngr->getInputMethod()
-					     ->isPanelHidden()) {
-					return false;
-				}
-			if ((-ev->points().first().globalPosition() +
-			     m_glwindow->gesture()->startingPoint())
-				    .y() > GESTURE_MINIMUM_THRESHOLD) {
-				m_glwindow->gesture()->confirmGesture();
-			}
-			return true;
-		}
-
-		if (ev->isEndEvent()) {
-			if (m_panelView != nullptr) {
-				if (m_panelView->panelState > 1) {
-					return false;
-				}
-			}
-			if (ev->points().first().globalPosition().y() <
-			    m_glwindow->height() * 0.8) {
-				m_inputMngr->getInputMethod()->showPanel();
-				return true;
-			}
 		}
 	}
 

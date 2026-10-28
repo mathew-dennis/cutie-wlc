@@ -5,6 +5,8 @@
 
 #include <QtWaylandCompositor/QWaylandCompositorExtensionTemplate>
 #include <QtWaylandCompositor/QWaylandCompositor>
+#include <QtWaylandCompositor/QWaylandSurface>
+#include <QSet>
 
 #include <cutie-wlc.h>
 
@@ -74,8 +76,13 @@ class TextInputV2 : public QWaylandCompositorExtensionTemplate<TextInputV2>,
 	void zwp_text_input_v2_update_state(Resource *resource, uint32_t serial,
 					    uint32_t reason) override;
 
+	private slots:
+	void onKeyboardFocusChanged(QWaylandSurface *newFocus,
+				    QWaylandSurface *oldFocus);
+
     private:
 	CwlCompositor *m_compositor;
+	QSet<QWaylandSurface *> m_enabledSurfaces;
 };
 
 #endif //TEXTINPUTV2

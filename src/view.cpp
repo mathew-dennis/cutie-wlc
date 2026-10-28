@@ -39,6 +39,21 @@ QOpenGLTexture *CwlView::getTexture()
 			delete m_texture;
 			m_texture = new QOpenGLTexture(bufRef.image());
 		}
+		if (output() &&
+		    output() != m_cwlcompositor->defaultOutput()) {
+			const QString name = m_layerSurface ?
+				m_layerSurface->ls_scope :
+				(isToplevel() ? getAppId() :
+						 QStringLiteral("surface"));
+			qInfo() << "Cutie: external buffer import" << name
+				<< "output" << output()->model() << output()
+				<< "buffer" << bufRef.size() << "surface"
+				<< (surface() ? surface()->destinationSize() : QSize())
+				<< "buffer type" << static_cast<int>(bufRef.bufferType())
+				<< "imported" << (m_texture != nullptr)
+				<< "texture id"
+				<< (m_texture ? m_texture->textureId() : 0);
+		}
 	}
 	return m_texture;
 }
@@ -338,21 +353,45 @@ void CwlView::onDestinationSizeChanged()
 
 void CwlView::onRedraw()
 {
-	if (!m_loggedExternalRedraw && output() &&
-	    output() != m_cwlcompositor->defaultOutput()) {
-		const QString name = m_layerSurface ?
-			m_layerSurface->ls_scope :
-			(isToplevel() ? getAppId() : QStringLiteral("surface"));
-		qInfo() << "Cutie: first external surface redraw" << name
-			<< "output" << output() << "content"
-			<< (surface() && surface()->hasContent()) << "size" << size()
-			<< "position" << getPosition();
-		m_loggedExternalRedraw = true;
-	}
+	logExternalSurfaceState();
 	m_cwlcompositor->triggerRender();
 	if (isToplevel())
 		;
 	m_cwlcompositor->onToplevelDamaged(this);
+}
+
+void CwlView::logExternalSurfaceState()
+{
+	if (!surface() || !output() ||
+	    output() == m_cwlcompositor->defaultOutput())
+		return;
+
+	const QSize bufferSize = surface()->bufferSize();
+	const QSize destinationSize = surface()->destinationSize();
+	const int bufferScale = surface()->bufferScale();
+	const bool hasContent = surface()->hasContent();
+	if (m_loggedExternalSurfaceState &&
+	    bufferSize == m_lastExternalBufferSize &&
+	    destinationSize == m_lastExternalDestinationSize &&
+	    bufferScale == m_lastExternalBufferScale &&
+	    hasContent == m_lastExternalHasContent)
+		return;
+
+	const QString name = m_layerSurface ?
+		m_layerSurface->ls_scope :
+		(isToplevel() ? getAppId() : QStringLiteral("surface"));
+	qInfo() << "Cutie: external surface state" << name
+		<< "output" << output()->model() << output()
+		<< "output geometry"
+		<< m_cwlcompositor->outputGeometry(output())
+		<< "buffer" << bufferSize << "surface" << destinationSize
+		<< "buffer scale" << bufferScale << "content" << hasContent
+		<< "position" << getPosition();
+	m_loggedExternalSurfaceState = true;
+	m_lastExternalBufferSize = bufferSize;
+	m_lastExternalDestinationSize = destinationSize;
+	m_lastExternalBufferScale = bufferScale;
+	m_lastExternalHasContent = hasContent;
 }
 
 QWaylandSurfaceGrabber *CwlView::grabber()

@@ -102,12 +102,6 @@ void InputMethodV2::hidePanel()
 	onHideInputPanel();
 }
 
-void InputMethodV2::showPanel()
-{
-	m_forceHide = false;
-	onShowInputPanel();
-}
-
 void InputMethodV2::zwp_input_method_v2_commit_string(Resource *resource,
 						      const QString &text)
 {
@@ -264,7 +258,15 @@ void InputMethodV2::zwp_input_method_v2_destroy(Resource *resource)
 
 void InputMethodV2::onShowInputPanel()
 {
-	if (m_panelHidden && !m_forceHide) {
+	// This slot is only reached from a validated text-input activation.
+	m_forceHide = false;
+	if (m_panelHidden) {
+		QWaylandSurface *focus =
+			m_compositor->defaultSeat()->keyboardFocus();
+		CwlView *view = m_compositor->findTlView(focus);
+		qInfo() << "Cutie: input panel show request"
+			<< "focus" << focus << "app"
+			<< (view ? view->getAppId() : QStringLiteral("<none>"));
 		this->send_activate();
 		this->send_done();
 		m_serial += 1;
@@ -281,6 +283,8 @@ void InputMethodV2::onShowInputPanel()
 void InputMethodV2::onHideInputPanel()
 {
 	if (!m_panelHidden) {
+		qInfo() << "Cutie: input panel hide request"
+			<< "focus" << m_compositor->defaultSeat()->keyboardFocus();
 		this->send_deactivate();
 		this->send_done();
 		m_serial += 1;
@@ -346,6 +350,14 @@ void InputMethodV2::onKeyboardFocusChanged(QWaylandSurface *newFocus,
 {
 	CwlView *newView = m_compositor->findView(newFocus);
 	CwlView *oldView = m_compositor->findView(oldFocus);
+	if (newFocus != oldFocus) {
+		qInfo() << "Cutie: keyboard focus changed"
+			<< (oldView ? oldView->getAppId() : QStringLiteral("<none>"))
+			<< "->"
+			<< (newView ? newView->getAppId() : QStringLiteral("<none>"));
+		if (!m_panelHidden)
+			onHideInputPanel();
+	}
 
 	if (oldView != nullptr)
 		if (oldView->tiV3 != nullptr)
