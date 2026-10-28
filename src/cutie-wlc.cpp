@@ -460,6 +460,14 @@ void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 {
 	QWaylandOutput *output = layerSurface->output ? layerSurface->output :
 									m_output;
+	if (layerSurface->ls_scope.endsWith(QStringLiteral("-external")) &&
+	    output == m_output && !m_externalOutputs.isEmpty()) {
+		output = m_externalOutputs.constBegin().value();
+		layerSurface->output = output;
+		qWarning() << "Cutie: external-scoped layer surface requested the"
+			      " primary output; routing it to external output"
+			   << layerSurface->ls_scope << output->model();
+	}
 	qInfo() << "Cutie: layer surface created"
 		<< layerSurface->ls_scope << "requested layer"
 		<< layerSurface->ls_layer << "output" << output
