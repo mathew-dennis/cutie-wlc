@@ -58,6 +58,7 @@ class InputMethodV2 : public QWaylandCompositorExtensionTemplate<InputMethodV2>,
 	InputMethodV2(struct ::wl_client *client, uint32_t id, int version,
 		      CwlCompositor *compositor);
 	void hidePanel();
+	void showPanel();
 	bool isPanelHidden();
 	void setContentType(uint32_t hint, uint32_t purpose);
 

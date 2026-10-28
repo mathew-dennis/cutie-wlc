@@ -4,8 +4,6 @@
 #include <QMatrix4x4>
 #include <QOpenGLFunctions>
 #include <QOpenGLTexture>
-#include <QDebug>
-#include <QStringList>
 #include <QMouseEvent>
 #include <QGuiApplication>
 #include <qpa/qplatformnativeinterface.h>
@@ -30,7 +28,6 @@ void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
 void GlWindow::setOutput(QWaylandOutput *output)
 {
 	m_output = output;
-	m_lastExternalStackSummary.clear();
 	requestUpdate();
 }
 
@@ -93,43 +90,15 @@ void GlWindow::paintGL()
 		    m_cwlcompositor->m_launcherView->output() == m_output)
 			renderViews << m_cwlcompositor->m_launcherView;
 	} else {
-		renderViews = m_cwlcompositor->getViewsForOutput(m_output);
-	}
-	if (!primaryOutput) {
-		QStringList summary;
-		for (CwlView *view : renderViews) {
-			LayerSurfaceV1 *layerSurface = view->getLayerSurface();
-			const QSize surfaceSize = view->size();
-			const QSize bufferSize = view->surface() ?
-				view->surface()->bufferSize() : QSize();
-			const int bufferScale = view->surface() ?
-				view->surface()->bufferScale() : 0;
-			const QString name = layerSurface ?
-				layerSurface->ls_scope :
-				(view->isToplevel() ? view->getAppId() :
-						      QStringLiteral("surface"));
-			summary << QStringLiteral(
-				"%1(layer=%2,size=%3x%4,buffer=%5x%6,scale=%7,content=%8,pos=%9,%10)")
-					.arg(name)
-					.arg(static_cast<int>(view->layer))
-					.arg(surfaceSize.width())
-					.arg(surfaceSize.height())
-					.arg(bufferSize.width())
-					.arg(bufferSize.height())
-					.arg(bufferScale)
-					.arg(view->surface() &&
-					     view->surface()->hasContent())
-					.arg(view->getPosition().x())
-					.arg(view->getPosition().y());
-		}
-		const QString currentSummary =
-			summary.join(QStringLiteral(", "));
-		if (currentSummary != m_lastExternalStackSummary) {
-			qInfo().noquote()
-				<< "Cutie: external output render stack"
-				<< m_output->model() << m_output->geometry()
-				<< currentSummary;
-			m_lastExternalStackSummary = currentSummary;
+		// The phone's launcher and desktop state must not blank the external
+		// desktop. Keep the most recently raised app visible on this output.
+		const QList<CwlView *> toplevels =
+			m_cwlcompositor->getToplevelViews();
+		for (auto it = toplevels.crbegin(); it != toplevels.crend(); ++it) {
+			if ((*it)->output() == m_output && !(*it)->isHidden()) {
+				renderViews << *it;
+				break;
+			}
 		}
 	}
 

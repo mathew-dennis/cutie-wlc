@@ -102,11 +102,6 @@ class CwlView : public QWaylandView {
 	LayerSurfaceV1 *m_layerSurface = nullptr;
 	CwlView *m_parentView = nullptr;
 	bool m_hidden = false;
-	bool m_loggedExternalSurfaceState = false;
-	QSize m_lastExternalBufferSize;
-	QSize m_lastExternalDestinationSize;
-	int m_lastExternalBufferScale = -1;
-	bool m_lastExternalHasContent = false;
 	QList<CwlView *> m_childViewList;
 	QRect m_availableGeometry;
 	bool m_isTopLevel = false;
@@ -127,7 +122,6 @@ class CwlView : public QWaylandView {
 	void onDestinationSizeChanged();
 	void onSurfaceChanged();
 	void onPopUpGeometryChanged();
-	void logExternalSurfaceState();
 };
 
 QT_END_NAMESPACE

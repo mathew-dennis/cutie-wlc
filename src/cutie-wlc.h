@@ -36,7 +36,6 @@ class CwlCompositor : public QWaylandCompositor {
 
 	QList<CwlView *> getViews() const;
 	QList<CwlView *> getToplevelViews();
-	QList<CwlView *> getViewsForOutput(QWaylandOutput *output) const;
 	CwlView *viewAt(const QPoint &position, QWaylandOutput *output = nullptr);
 	CwlView *findView(QWaylandSurface *s);
 	CwlView *findTlView(QWaylandSurface *s);

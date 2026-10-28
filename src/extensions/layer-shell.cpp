@@ -19,11 +19,6 @@ void LayerShellV1::zwlr_layer_shell_v1_get_layer_surface(
 	LayerSurfaceV1 *obj =
 		new LayerSurfaceV1(resource->client(), id, resource->version());
 	obj->surface = QWaylandSurface::fromResource(surface);
-	obj->output = output ? QWaylandOutput::fromResource(output) : nullptr;
-	qInfo() << "Cutie: layer-shell request" << scope << "wl_output resource"
-		<< output << "mapped output" << obj->output;
-	if (!obj->output)
-		obj->output = m_compositor->defaultOutput();
 	obj->ls_layer = layer;
 	obj->new_ls_layer = layer;
 	obj->ls_scope = scope;
@@ -31,7 +26,10 @@ void LayerShellV1::zwlr_layer_shell_v1_get_layer_surface(
 	connect(obj->surface, &QWaylandSurface::redraw, obj,
 		&LayerSurfaceV1::onCommit);
 
-	emit layerShellSurfaceCreated(obj);
+	if (layer == 2)
+		emit layerShellSurfaceTopCreated(surface);
+	else
+		emit layerShellSurfaceCreated(obj);
 }
 
 LayerSurfaceV1::LayerSurfaceV1(wl_client *client, uint32_t id, int version)

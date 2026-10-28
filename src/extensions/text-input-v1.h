@@ -79,14 +79,8 @@ class TextInputV1 : public QWaylandCompositorExtensionTemplate<TextInputV1>,
 					     uint32_t button,
 					     uint32_t index) override;
 
-	private slots:
-	void onKeyboardFocusChanged(QWaylandSurface *newFocus,
-				    QWaylandSurface *oldFocus);
-
     private:
 	CwlCompositor *m_compositor;
-	QWaylandSurface *m_activeSurface = nullptr;
-	bool m_hasFocus = false;
 };
 
 #endif //TEXT_INPUT_V1

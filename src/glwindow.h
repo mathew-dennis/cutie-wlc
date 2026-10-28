@@ -3,8 +3,6 @@
 #include <QOpenGLWindow>
 #include <QOpenGLTextureBlitter>
 #include <QEventPoint>
-#include <QString>
-#include <QString>
 #include <QtWaylandCompositor/QWaylandOutput>
 
 #include <cutie-wlc.h>
@@ -51,7 +49,6 @@ class GlWindow : public QOpenGLWindow {
 
 	QList<QEventPoint *> m_evPoint;
 	bool m_displayOff = false;
-	QString m_lastExternalStackSummary;
 
 	CwlCompositor *m_cwlcompositor = nullptr;
 	CwlGesture *m_gesture = nullptr;

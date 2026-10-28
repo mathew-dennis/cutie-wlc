@@ -1,7 +1,6 @@
 #include <view.h>
 #include <cutie-wlc.h>
 #include <QOpenGLTexture>
-#include <QDebug>
 #include <QtWaylandCompositor/QWaylandSeat>
 
 CwlView::CwlView(CwlCompositor *cwlcompositor, QRect geometry)
@@ -38,21 +37,6 @@ QOpenGLTexture *CwlView::getTexture()
 			m_isImageBuffer = true;
 			delete m_texture;
 			m_texture = new QOpenGLTexture(bufRef.image());
-		}
-		if (output() &&
-		    output() != m_cwlcompositor->defaultOutput()) {
-			const QString name = m_layerSurface ?
-				m_layerSurface->ls_scope :
-				(isToplevel() ? getAppId() :
-						 QStringLiteral("surface"));
-			qInfo() << "Cutie: external buffer import" << name
-				<< "output" << output()->model() << output()
-				<< "buffer" << bufRef.size() << "surface"
-				<< (surface() ? surface()->destinationSize() : QSize())
-				<< "buffer type" << static_cast<int>(bufRef.bufferType())
-				<< "imported" << (m_texture != nullptr)
-				<< "texture id"
-				<< (m_texture ? m_texture->textureId() : 0);
 		}
 	}
 	return m_texture;
@@ -283,8 +267,6 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 {
 	if (surface != m_layerSurface)
 		return;
-	const QRect screenGeometry =
-		m_cwlcompositor->outputGeometry(this->output());
 	if (m_layerSurface->ls_scope == "cutie-panel" &&
 	    m_layerSurface->size.height() <= m_layerSurface->ls_zone)
 		panelState = PANEL_FOLDED;
@@ -297,47 +279,42 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 	if (CwlViewAnchor::ANCHOR_TOP & m_layerSurface->ls_anchor &&
 	    !(CwlViewAnchor::ANCHOR_BOTTOM & m_layerSurface->ls_anchor))
 		position.setY(m_layerSurface->ls_zone < 0 ?
-				      screenGeometry.top() :
+				      0 :
 				      m_availableGeometry.top());
 	else if (CwlViewAnchor::ANCHOR_BOTTOM & m_layerSurface->ls_anchor &&
 		 !(CwlViewAnchor::ANCHOR_TOP & m_layerSurface->ls_anchor))
 		position.setY(
 			(m_layerSurface->ls_zone < 0 ?
-				 screenGeometry.bottom() :
+				 m_cwlcompositor->m_workspace->outputGeometry()
+					 .bottom() :
 				 m_availableGeometry.bottom()) -
-			m_layerSurface->size.height() + 1 -
-			qMax(0, m_layerSurface->ls_zone));
+			m_layerSurface->ls_zone);
 	else if (m_layerSurface->ls_zone < 0)
-		position.setY(screenGeometry.center()
+		position.setY(m_cwlcompositor->m_workspace->outputGeometry()
+				      .center()
 				      .y() -
 			      m_layerSurface->size.height() / 2);
 
 	if (CwlViewAnchor::ANCHOR_LEFT & m_layerSurface->ls_anchor &&
 	    !(CwlViewAnchor::ANCHOR_RIGHT & m_layerSurface->ls_anchor))
 		position.setX(m_layerSurface->ls_zone < 0 ?
-				      screenGeometry.left() :
+				      0 :
 				      m_availableGeometry.left());
 	else if (CwlViewAnchor::ANCHOR_RIGHT & m_layerSurface->ls_anchor &&
 		 !(CwlViewAnchor::ANCHOR_LEFT & m_layerSurface->ls_anchor))
 		position.setX(
 			(m_layerSurface->ls_zone < 0 ?
-				 screenGeometry.right() :
+				 m_cwlcompositor->m_workspace->outputGeometry()
+					 .right() :
 				 m_availableGeometry.right()) -
-			m_layerSurface->size.width() + 1 -
-			qMax(0, m_layerSurface->ls_zone));
+			m_layerSurface->size.width());
 	else if (m_layerSurface->ls_zone < 0)
-		position.setX(screenGeometry.center()
+		position.setX(m_cwlcompositor->m_workspace->outputGeometry()
+				      .center()
 				      .x() -
 			      m_layerSurface->size.width() / 2);
 
 	this->setPosition(position);
-	if (this->output() != m_cwlcompositor->defaultOutput())
-		qInfo() << "Cutie: external layer surface positioned"
-			<< m_layerSurface->ls_scope << "output" << this->output()
-			<< "layer" << layer << "size" << m_layerSurface->size
-			<< "position" << position << "anchors"
-			<< m_layerSurface->ls_anchor << "zone"
-			<< m_layerSurface->ls_zone;
 }
 
 void CwlView::onDestinationSizeChanged()
@@ -353,45 +330,10 @@ void CwlView::onDestinationSizeChanged()
 
 void CwlView::onRedraw()
 {
-	logExternalSurfaceState();
 	m_cwlcompositor->triggerRender();
 	if (isToplevel())
 		;
 	m_cwlcompositor->onToplevelDamaged(this);
-}
-
-void CwlView::logExternalSurfaceState()
-{
-	if (!surface() || !output() ||
-	    output() == m_cwlcompositor->defaultOutput())
-		return;
-
-	const QSize bufferSize = surface()->bufferSize();
-	const QSize destinationSize = surface()->destinationSize();
-	const int bufferScale = surface()->bufferScale();
-	const bool hasContent = surface()->hasContent();
-	if (m_loggedExternalSurfaceState &&
-	    bufferSize == m_lastExternalBufferSize &&
-	    destinationSize == m_lastExternalDestinationSize &&
-	    bufferScale == m_lastExternalBufferScale &&
-	    hasContent == m_lastExternalHasContent)
-		return;
-
-	const QString name = m_layerSurface ?
-		m_layerSurface->ls_scope :
-		(isToplevel() ? getAppId() : QStringLiteral("surface"));
-	qInfo() << "Cutie: external surface state" << name
-		<< "output" << output()->model() << output()
-		<< "output geometry"
-		<< m_cwlcompositor->outputGeometry(output())
-		<< "buffer" << bufferSize << "surface" << destinationSize
-		<< "buffer scale" << bufferScale << "content" << hasContent
-		<< "position" << getPosition();
-	m_loggedExternalSurfaceState = true;
-	m_lastExternalBufferSize = bufferSize;
-	m_lastExternalDestinationSize = destinationSize;
-	m_lastExternalBufferScale = bufferScale;
-	m_lastExternalHasContent = hasContent;
 }
 
 QWaylandSurfaceGrabber *CwlView::grabber()

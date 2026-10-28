@@ -170,13 +170,6 @@ QList<CwlView *> CwlCompositor::getToplevelViews()
 	return m_workspace->getToplevelViews();
 }
 
-QList<CwlView *> CwlCompositor::getViewsForOutput(
-	QWaylandOutput *output) const
-{
-	return m_workspace ? m_workspace->getViewsForOutput(output) :
-			     QList<CwlView *>();
-}
-
 QWaylandOutput *CwlCompositor::outputForToplevel(CwlView *view)
 {
 	if (!view || view->getAppId() == "cutie-launcher")
@@ -189,13 +182,8 @@ QWaylandOutput *CwlCompositor::outputForToplevel(CwlView *view)
 		if (parent && parent->output())
 			return parent->output();
 	}
-	if (!m_externalOutputs.isEmpty()) {
-		QWaylandOutput *output = m_externalOutputs.constBegin().value();
-		qInfo() << "Cutie: routing app to external output"
-			<< view->getAppId() << output->model() << output
-			<< outputGeometry(output);
-		return output;
-	}
+	if (!m_externalOutputs.isEmpty())
+		return m_externalOutputs.constBegin().value();
 	return m_output;
 }
 
@@ -212,10 +200,6 @@ void CwlCompositor::onScreenAdded(QScreen *screen)
 	if (!m_created || !screen || screen == m_glwindow->screen() ||
 	    m_externalWindows.contains(screen))
 		return;
-	qInfo() << "Cutie: Qt reported external screen" << screen
-		<< screen->name() << "geometry" << screen->geometry()
-		<< "size" << screen->size() << "device pixel ratio"
-		<< screen->devicePixelRatio();
 
 	GlWindow *window = new GlWindow();
 	window->setScreen(screen);
@@ -249,8 +233,7 @@ void CwlCompositor::createExternalOutput(QScreen *screen, GlWindow *window)
 	routeExistingViews(m_output, output);
 	triggerRender();
 	qInfo() << "Cutie: added Wayland output for screen" << screen->name()
-		<< "output" << output << "geometry" << output->geometry()
-		<< "window" << window->size();
+		<< output->geometry();
 }
 
 void CwlCompositor::onScreenRemoved(QScreen *screen)
@@ -261,17 +244,6 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 	if (!output)
 		return;
 	routeExistingViews(output, m_output);
-	for (CwlView *view : m_workspace->getAllViews()) {
-		if (view->output() != output)
-			continue;
-		if (LayerSurfaceV1 *layerSurface = view->getLayerSurface()) {
-			layerSurface->output = m_output;
-			view->setDesktopOutput(m_output, outputGeometry(m_output));
-			view->onLayerSurfaceDataChanged(layerSurface);
-		} else {
-			view->setOutput(m_output);
-		}
-	}
 	GlWindow *window = m_externalWindows.take(screen);
 	if (window)
 		window->setOutput(nullptr);
@@ -323,7 +295,7 @@ CwlView *CwlCompositor::viewAt(const QPoint &position, QWaylandOutput *output)
 				   QPointF(position) / outputScale;
 	CwlView *ret = nullptr;
 	const QList<CwlView *> views = output == m_output ? getViews()
-								 : getViewsForOutput(output);
+									 : getToplevelViews();
 	for (auto it = views.crbegin(); it != views.crend(); ++it) {
 		CwlView *view = *it;
 		if (view->output() != output)
@@ -461,22 +433,8 @@ void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 
 void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 {
-	QWaylandOutput *output = layerSurface->output ? layerSurface->output :
-									m_output;
-	if (layerSurface->ls_scope.endsWith(QStringLiteral("-external")) &&
-	    output == m_output && !m_externalOutputs.isEmpty()) {
-		output = m_externalOutputs.constBegin().value();
-		layerSurface->output = output;
-		qWarning() << "Cutie: external-scoped layer surface requested the"
-			      " primary output; routing it to external output"
-			   << layerSurface->ls_scope << output->model();
-	}
-	qInfo() << "Cutie: layer surface created"
-		<< layerSurface->ls_scope << "requested layer"
-		<< layerSurface->ls_layer << "output" << output
-		<< "output geometry" << outputGeometry(output);
-	CwlView *view = new CwlView(this, outputGeometry(output));
-	view->setOutput(output);
+	CwlView *view = new CwlView(this, m_workspace->availableGeometry());
+	view->setOutput(m_output);
 	view->setSurface(layerSurface->surface);
 
 	view->setLayerSurface(layerSurface);
@@ -486,10 +444,10 @@ void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 	view->layer = (CwlViewLayer)layerSurface->ls_layer;
 	m_workspace->addView(view);
 
-	if (layerSurface->ls_scope == "cutie-home" && output == m_output)
+	if (layerSurface->ls_scope == "cutie-home")
 		m_homeView = view;
 
-	if (layerSurface->ls_scope == "cutie-panel" && output == m_output)
+	if (layerSurface->ls_scope == "cutie-panel")
 		m_panelView = view;
 	connect(view->surface(), &QWaylandSurface::redraw, view,
 		&CwlView::onRedraw);
@@ -592,7 +550,7 @@ void CwlCompositor::handleMouseReleaseEvent(QList<QEventPoint> points,
 	defaultSeat()->sendMouseReleaseEvent(btn);
 }
 
-bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int /*corner*/)
+bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 {
 	if (edge == EDGE_LEFT) {
 		if (ev->isBeginEvent()) {
@@ -724,6 +682,43 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int /*corner*/)
 					launcherCloseAnim->start();
 			}
 			return true;
+		}
+	}
+
+	if (corner == CORNER_BR || corner == CORNER_BL) {
+		if (launcherPosition() > 0.0) {
+			return false;
+		}
+
+		if (m_panelView != nullptr)
+			if (m_panelView->panelState > 1)
+				return false;
+
+		if (ev->isBeginEvent() || ev->isUpdateEvent()) {
+			if (m_inputMngr->getInputMethod() != nullptr)
+				if (!m_inputMngr->getInputMethod()
+					     ->isPanelHidden()) {
+					return false;
+				}
+			if ((-ev->points().first().globalPosition() +
+			     m_glwindow->gesture()->startingPoint())
+				    .y() > GESTURE_MINIMUM_THRESHOLD) {
+				m_glwindow->gesture()->confirmGesture();
+			}
+			return true;
+		}
+
+		if (ev->isEndEvent()) {
+			if (m_panelView != nullptr) {
+				if (m_panelView->panelState > 1) {
+					return false;
+				}
+			}
+			if (ev->points().first().globalPosition().y() <
+			    m_glwindow->height() * 0.8) {
+				m_inputMngr->getInputMethod()->showPanel();
+				return true;
+			}
 		}
 	}
 

@@ -5,7 +5,6 @@
 
 #include <QtWaylandCompositor/QWaylandCompositorExtensionTemplate>
 #include <QtWaylandCompositor/QWaylandCompositor>
-#include <QtWaylandCompositor/QWaylandOutput>
 #include <QtWaylandCompositor/QWaylandSurface>
 #include <QPropertyAnimation>
 
@@ -25,6 +24,8 @@ class LayerShellV1 : public QWaylandCompositorExtensionTemplate<LayerShellV1>,
 
     signals:
 	void layerShellSurfaceCreated(LayerSurfaceV1 *layerSurface);
+
+	void layerShellSurfaceTopCreated(struct ::wl_resource *surface);
 
     public Q_SLOTS:
 
@@ -47,23 +48,22 @@ class LayerSurfaceV1
     public:
 	LayerSurfaceV1(struct ::wl_client *client, uint32_t id, int version);
 	QWaylandSurface *surface = nullptr;
-	QWaylandOutput *output = nullptr;
 
 	QMargins margins;
 	QSize size;
-	int ls_zone = 0;
-	uint ls_anchor = 0;
-	uint32_t ls_layer = 0;
-	uint32_t ls_keyboard_interactivity = 0;
-	uint32_t ls_serial = 0;
+	int ls_zone;
+	uint ls_anchor;
+	uint32_t ls_layer;
+	uint32_t ls_keyboard_interactivity;
+	uint32_t ls_serial;
 	QString ls_scope;
 
 	QMargins newMargins;
 	QSize newSize;
-	int new_ls_zone = 0;
-	uint new_ls_anchor = 0;
-	uint32_t new_ls_layer = 0;
-	uint32_t new_ls_keyboard_interactivity = 0;
+	int new_ls_zone;
+	uint new_ls_anchor;
+	uint32_t new_ls_layer;
+	uint32_t new_ls_keyboard_interactivity;
 
 	bool initialized = false;
 

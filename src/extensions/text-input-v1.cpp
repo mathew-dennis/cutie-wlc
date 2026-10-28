@@ -21,6 +21,7 @@ void TextInputManagerV1::initialize()
 void TextInputManagerV1::zwp_text_input_manager_v1_create_text_input(
 	Resource *resource, uint32_t id)
 {
+	QWaylandSurface *surface;
 	TextInputV1 *textInput = new TextInputV1(
 		resource->client(), id, resource->version(), m_compositor);
 
@@ -30,6 +31,14 @@ void TextInputManagerV1::zwp_text_input_manager_v1_create_text_input(
 		&TextInputManagerV1::hideInputPanel);
 	connect(textInput, &TextInputV1::contentTypeChanged, this,
 		&TextInputManagerV1::contentTypeChanged);
+
+	if (m_compositor->defaultSeat()->keyboardFocus() != nullptr) {
+		surface = m_compositor->defaultSeat()->keyboardFocus();
+		if (surface->client()->client() == resource->client()) {
+			textInput->send_enter(surface->resource());
+			m_compositor->findTlView(surface)->tiV1 = textInput;
+		}
+	}
 }
 
 TextInputV1::TextInputV1(wl_client *client, uint32_t id, int version,
@@ -37,9 +46,6 @@ TextInputV1::TextInputV1(wl_client *client, uint32_t id, int version,
 	: QtWaylandServer::zwp_text_input_v1(client, id, version)
 {
 	m_compositor = compositor;
-	connect(m_compositor->defaultSeat(),
-		&QWaylandSeat::keyboardFocusChanged, this,
-		&TextInputV1::onKeyboardFocusChanged);
 }
 
 void TextInputV1::zwp_text_input_v1_bind_resource(Resource *resource)
@@ -48,86 +54,33 @@ void TextInputV1::zwp_text_input_v1_bind_resource(Resource *resource)
 
 void TextInputV1::zwp_text_input_v1_destroy_resource(Resource *resource)
 {
-	if (m_hasFocus) {
-		send_leave();
-		emit hideInputPanel();
-	}
-	if (m_activeSurface)
-		if (CwlView *view =
-			    m_compositor->findTlView(m_activeSurface))
-			if (view->tiV1 == this)
-				view->tiV1 = nullptr;
-	m_hasFocus = false;
-	m_activeSurface = nullptr;
 }
 
 void TextInputV1::zwp_text_input_v1_activate(Resource *resource,
 					     struct ::wl_resource *seat,
 					     struct ::wl_resource *surface)
 {
-	QWaylandSurface *requestedSurface =
-		QWaylandSurface::fromResource(surface);
-	if (!requestedSurface || !requestedSurface->client() ||
-	    requestedSurface->client()->client() != resource->client())
-		return;
-	if (m_activeSurface != requestedSurface) {
-		if (m_hasFocus) {
-			send_leave();
-			emit hideInputPanel();
-		}
-		m_activeSurface = requestedSurface;
-		m_hasFocus = false;
-		connect(requestedSurface, &QObject::destroyed, this,
-			[this, requestedSurface]() {
-				if (m_activeSurface == requestedSurface) {
-					m_activeSurface = nullptr;
-					m_hasFocus = false;
-				}
-			});
-	}
-	if (m_compositor->defaultSeat()->keyboardFocus() == requestedSurface)
-		onKeyboardFocusChanged(requestedSurface, nullptr);
 }
 
 void TextInputV1::zwp_text_input_v1_deactivate(Resource *resource,
 					       struct ::wl_resource *seat)
 {
-	if (m_hasFocus) {
-		send_leave();
-		emit hideInputPanel();
-	}
-	if (m_activeSurface)
-		if (CwlView *view =
-			    m_compositor->findTlView(m_activeSurface))
-			if (view->tiV1 == this)
-				view->tiV1 = nullptr;
-	m_hasFocus = false;
-	m_activeSurface = nullptr;
 }
 
 void TextInputV1::zwp_text_input_v1_show_input_panel(Resource *resource)
 {
-	QWaylandSurface *surface =
-		m_compositor->defaultSeat()->keyboardFocus();
-	if (!surface || surface != m_activeSurface || !m_hasFocus ||
-	    !surface->client() ||
-	    surface->client()->client() != resource->client())
-		return;
-	CwlView *view = m_compositor->findTlView(surface);
-	if (!view)
-		return;
-	view->tiV1 = this;
+	QWaylandSurface *surface;
+	if (m_compositor->defaultSeat()->keyboardFocus() != nullptr) {
+		surface = m_compositor->defaultSeat()->keyboardFocus();
+		if (surface->client()->client() == resource->client()) {
+			m_compositor->findTlView(surface)->tiV1 = this;
+		}
+	}
 	emit showInputPanel();
 }
 
 void TextInputV1::zwp_text_input_v1_hide_input_panel(Resource *resource)
 {
-	QWaylandSurface *surface =
-		m_compositor->defaultSeat()->keyboardFocus();
-	if (!surface || surface != m_activeSurface || !m_hasFocus ||
-	    !surface->client() ||
-	    surface->client()->client() != resource->client())
-		return;
 	emit hideInputPanel();
 }
 
@@ -146,35 +99,7 @@ void TextInputV1::zwp_text_input_v1_set_content_type(Resource *resource,
 						     uint32_t hint,
 						     uint32_t purpose)
 {
-	QWaylandSurface *surface =
-		m_compositor->defaultSeat()->keyboardFocus();
-	if (!surface || surface != m_activeSurface || !m_hasFocus ||
-	    !surface->client() ||
-	    surface->client()->client() != resource->client())
-		return;
 	emit contentTypeChanged(hint, purpose);
-}
-
-void TextInputV1::onKeyboardFocusChanged(QWaylandSurface *newFocus,
-						 QWaylandSurface *oldFocus)
-{
-	if (m_hasFocus && oldFocus == m_activeSurface &&
-	    newFocus != m_activeSurface) {
-		send_leave();
-		emit hideInputPanel();
-		if (CwlView *view = m_compositor->findTlView(oldFocus))
-			if (view->tiV1 == this)
-				view->tiV1 = nullptr;
-		m_hasFocus = false;
-	}
-	if (newFocus != m_activeSurface || m_hasFocus)
-		return;
-	CwlView *view = m_compositor->findTlView(newFocus);
-	if (!view)
-		return;
-	view->tiV1 = this;
-	send_enter(newFocus->resource());
-	m_hasFocus = true;
 }
 
 void TextInputV1::zwp_text_input_v1_set_cursor_rectangle(Resource *resource,

@@ -58,58 +58,6 @@ QList<CwlView *> CwlWorkspace::getToplevelViews()
 	return m_viewLayerList[CwlViewLayer::TOP];
 }
 
-QList<CwlView *> CwlWorkspace::getViewsForOutput(QWaylandOutput *output) const
-{
-	QList<CwlView *> views;
-	if (!output)
-		return views;
-	if (output == m_compositor->defaultOutput()) {
-		for (CwlView *view : m_viewList)
-			if (view->output() == output && !view->isHidden())
-				views << view;
-		return views;
-	}
-
-	for (CwlViewLayer layer : { CwlViewLayer::BACKGROUND,
-				    CwlViewLayer::BOTTOM }) {
-		for (CwlView *view : m_viewLayerList[layer])
-			if (view->output() == output && !view->isHidden())
-				views << view;
-	}
-
-	CwlView *activeToplevel = nullptr;
-	QList<CwlView *> topLayerSurfaces;
-	for (auto it = m_viewLayerList[CwlViewLayer::TOP].crbegin();
-	     it != m_viewLayerList[CwlViewLayer::TOP].crend(); ++it) {
-		CwlView *view = *it;
-		if (view->output() != output || view->isHidden())
-			continue;
-		if (view->isToplevel()) {
-			if (!activeToplevel)
-				activeToplevel = view;
-		} else {
-			topLayerSurfaces.prepend(view);
-		}
-	}
-	if (activeToplevel)
-		views << activeToplevel;
-	views << topLayerSurfaces;
-
-	for (CwlView *view : m_viewLayerList[CwlViewLayer::OVERLAY])
-		if (view->output() == output && !view->isHidden())
-			views << view;
-
-	return views;
-}
-
-QList<CwlView *> CwlWorkspace::getAllViews() const
-{
-	QList<CwlView *> views;
-	for (int layer = 0; layer < CwlViewLayer::NUM_LAYERS; ++layer)
-		views << m_viewLayerList[layer];
-	return views;
-}
-
 void CwlWorkspace::hideAllTopLevel()
 {
 	for (CwlView *view : m_viewLayerList[CwlViewLayer::TOP])
@@ -149,6 +97,9 @@ void CwlWorkspace::updateAvailableGeometry()
 	QRect geometry = m_outputGeometry;
 
 	QList<LayerSurfaceV1 *> lsList = getLayerSurfaces();
+	if (lsList.empty())
+		return;
+
 	for (LayerSurfaceV1 *surface : lsList) {
 		if (surface && surface->initialized) {
 			if (surface->ls_anchor == 1 ||
@@ -187,12 +138,11 @@ void CwlWorkspace::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 	updateAvailableGeometry();
 }
 
-QList<LayerSurfaceV1 *> CwlWorkspace::getLayerSurfaces() const
+QList<LayerSurfaceV1 *> CwlWorkspace::getLayerSurfaces()
 {
 	QList<LayerSurfaceV1 *> ret;
 	for (CwlView *view : m_viewList)
-		if (view->getLayerSurface() &&
-		    view->output() == m_compositor->defaultOutput())
+		if (view->getLayerSurface())
 			ret << view->getLayerSurface();
 	return ret;
 }
