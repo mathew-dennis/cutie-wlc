@@ -1,6 +1,7 @@
 #include <view.h>
 #include <cutie-wlc.h>
 #include <QOpenGLTexture>
+#include <QDebug>
 #include <QtWaylandCompositor/QWaylandSeat>
 
 CwlView::CwlView(CwlCompositor *cwlcompositor, QRect geometry)
@@ -289,7 +290,8 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 			(m_layerSurface->ls_zone < 0 ?
 				 screenGeometry.bottom() :
 				 m_availableGeometry.bottom()) -
-			m_layerSurface->ls_zone);
+			m_layerSurface->size.height() + 1 -
+			qMax(0, m_layerSurface->ls_zone));
 	else if (m_layerSurface->ls_zone < 0)
 		position.setY(screenGeometry.center()
 				      .y() -
@@ -306,13 +308,21 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 			(m_layerSurface->ls_zone < 0 ?
 				 screenGeometry.right() :
 				 m_availableGeometry.right()) -
-			m_layerSurface->size.width());
+			m_layerSurface->size.width() + 1 -
+			qMax(0, m_layerSurface->ls_zone));
 	else if (m_layerSurface->ls_zone < 0)
 		position.setX(screenGeometry.center()
 				      .x() -
 			      m_layerSurface->size.width() / 2);
 
 	this->setPosition(position);
+	if (this->output() != m_cwlcompositor->defaultOutput())
+		qInfo() << "Cutie: external layer surface positioned"
+			<< m_layerSurface->ls_scope << "output" << this->output()
+			<< "layer" << layer << "size" << m_layerSurface->size
+			<< "position" << position << "anchors"
+			<< m_layerSurface->ls_anchor << "zone"
+			<< m_layerSurface->ls_zone;
 }
 
 void CwlView::onDestinationSizeChanged()
@@ -328,6 +338,17 @@ void CwlView::onDestinationSizeChanged()
 
 void CwlView::onRedraw()
 {
+	if (!m_loggedExternalRedraw && output() &&
+	    output() != m_cwlcompositor->defaultOutput()) {
+		const QString name = m_layerSurface ?
+			m_layerSurface->ls_scope :
+			(isToplevel() ? getAppId() : QStringLiteral("surface"));
+		qInfo() << "Cutie: first external surface redraw" << name
+			<< "output" << output() << "content"
+			<< (surface() && surface()->hasContent()) << "size" << size()
+			<< "position" << getPosition();
+		m_loggedExternalRedraw = true;
+	}
 	m_cwlcompositor->triggerRender();
 	if (isToplevel())
 		;

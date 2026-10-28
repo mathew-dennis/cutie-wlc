@@ -189,8 +189,12 @@ QWaylandOutput *CwlCompositor::outputForToplevel(CwlView *view)
 		if (parent && parent->output())
 			return parent->output();
 	}
-	if (!m_externalOutputs.isEmpty())
-		return m_externalOutputs.constBegin().value();
+	if (!m_externalOutputs.isEmpty()) {
+		QWaylandOutput *output = m_externalOutputs.constBegin().value();
+		qInfo() << "Cutie: routing app to external output"
+			<< view->getAppId() << output->model();
+		return output;
+	}
 	return m_output;
 }
 
@@ -207,6 +211,8 @@ void CwlCompositor::onScreenAdded(QScreen *screen)
 	if (!m_created || !screen || screen == m_glwindow->screen() ||
 	    m_externalWindows.contains(screen))
 		return;
+	qInfo() << "Cutie: Qt reported external screen" << screen->name()
+		<< "geometry" << screen->geometry() << "size" << screen->size();
 
 	GlWindow *window = new GlWindow();
 	window->setScreen(screen);
@@ -240,7 +246,8 @@ void CwlCompositor::createExternalOutput(QScreen *screen, GlWindow *window)
 	routeExistingViews(m_output, output);
 	triggerRender();
 	qInfo() << "Cutie: added Wayland output for screen" << screen->name()
-		<< output->geometry();
+		<< "output" << output << "geometry" << output->geometry()
+		<< "window" << window->size();
 }
 
 void CwlCompositor::onScreenRemoved(QScreen *screen)
@@ -453,6 +460,10 @@ void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 {
 	QWaylandOutput *output = layerSurface->output ? layerSurface->output :
 									m_output;
+	qInfo() << "Cutie: layer surface created"
+		<< layerSurface->ls_scope << "requested layer"
+		<< layerSurface->ls_layer << "output" << output
+		<< "output geometry" << outputGeometry(output);
 	CwlView *view = new CwlView(this, outputGeometry(output));
 	view->setOutput(output);
 	view->setSurface(layerSurface->surface);
