@@ -4,6 +4,8 @@
 #include <QMatrix4x4>
 #include <QOpenGLFunctions>
 #include <QOpenGLTexture>
+#include <QDebug>
+#include <QStringList>
 #include <QMouseEvent>
 #include <QGuiApplication>
 #include <qpa/qplatformnativeinterface.h>
@@ -28,6 +30,7 @@ void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
 void GlWindow::setOutput(QWaylandOutput *output)
 {
 	m_output = output;
+	m_lastExternalViewCount = -1;
 	requestUpdate();
 }
 
@@ -91,6 +94,30 @@ void GlWindow::paintGL()
 			renderViews << m_cwlcompositor->m_launcherView;
 	} else {
 		renderViews = m_cwlcompositor->getViewsForOutput(m_output);
+	}
+	if (!primaryOutput && renderViews.size() != m_lastExternalViewCount) {
+		QStringList summary;
+		for (CwlView *view : renderViews) {
+			LayerSurfaceV1 *layerSurface = view->getLayerSurface();
+			const QString name = layerSurface ?
+				layerSurface->ls_scope :
+				(view->isToplevel() ? view->getAppId() :
+						      QStringLiteral("surface"));
+			summary << QStringLiteral(
+				"%1(layer=%2,size=%3x%4,content=%5,pos=%6,%7)")
+					.arg(name)
+					.arg(static_cast<int>(view->layer))
+					.arg(view->size().width())
+					.arg(view->size().height())
+					.arg(view->surface() &&
+					     view->surface()->hasContent())
+					.arg(view->getPosition().x())
+					.arg(view->getPosition().y());
+		}
+		qInfo().noquote() << "Cutie: external output render stack"
+				  << m_output->model()
+				  << summary.join(QStringLiteral(", "));
+		m_lastExternalViewCount = renderViews.size();
 	}
 
 	for (CwlView *view : renderViews) {

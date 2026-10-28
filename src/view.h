@@ -102,6 +102,7 @@ class CwlView : public QWaylandView {
 	LayerSurfaceV1 *m_layerSurface = nullptr;
 	CwlView *m_parentView = nullptr;
 	bool m_hidden = false;
+	bool m_loggedExternalRedraw = false;
 	QList<CwlView *> m_childViewList;
 	QRect m_availableGeometry;
 	bool m_isTopLevel = false;
