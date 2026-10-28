@@ -2,6 +2,9 @@
 #include <cutie-wlc.h>
 #include <QOpenGLTexture>
 #include <QtWaylandCompositor/QWaylandSeat>
+#include <QHash>
+#include <QElapsedTimer>
+#include <QDebug>
 
 CwlView::CwlView(CwlCompositor *cwlcompositor, QRect geometry)
 	: m_cwlcompositor(cwlcompositor)
@@ -314,6 +317,24 @@ void CwlView::onDestinationSizeChanged()
 
 void CwlView::onRedraw()
 {
+	// Temporary: count redraws per app / layer scope, once per second
+	static QHash<QString, int> commits;
+	static QElapsedTimer clock;
+	if (!clock.isValid())
+		clock.start();
+	QString key = m_cwlAppId;
+	if (key.isEmpty())
+		key = m_isPopup ? QStringLiteral("popup") : QStringLiteral("unknown");
+	commits[key]++;
+	if (clock.elapsed() >= 1000) {
+		QString line;
+		for (auto it = commits.constBegin(); it != commits.constEnd(); ++it)
+			line += QStringLiteral(" %1=%2").arg(it.key()).arg(it.value());
+		qDebug("CUTIE_PERF src=wlc ev=commits%s", qPrintable(line));
+		commits.clear();
+		clock.restart();
+	}
+
 	m_cwlcompositor->triggerRender();
 	if (isToplevel())
 		;
