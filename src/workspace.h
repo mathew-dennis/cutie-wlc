@@ -15,6 +15,8 @@ class CwlWorkspace : public QObject {
 	void raiseView(CwlView *view);
 	QList<CwlView *> getViews();
 	QList<CwlView *> getToplevelViews();
+	QList<CwlView *> getViewsForOutput(QWaylandOutput *output) const;
+	QList<CwlView *> getAllViews() const;
 
 	void hideAllTopLevel();
 	void showDesktop(bool show);
@@ -38,7 +40,7 @@ class CwlWorkspace : public QObject {
 	QList<CwlView *> m_viewList;
 	QList<CwlView *> m_viewLayerList[CwlViewLayer::NUM_LAYERS];
 
-	QList<LayerSurfaceV1 *> getLayerSurfaces();
+	QList<LayerSurfaceV1 *> getLayerSurfaces() const;
 
 	void updateViewList();
 	void updateAvailableGeometry();

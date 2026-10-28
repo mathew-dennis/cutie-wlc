@@ -90,16 +90,7 @@ void GlWindow::paintGL()
 		    m_cwlcompositor->m_launcherView->output() == m_output)
 			renderViews << m_cwlcompositor->m_launcherView;
 	} else {
-		// The phone's launcher and desktop state must not blank the external
-		// desktop. Keep the most recently raised app visible on this output.
-		const QList<CwlView *> toplevels =
-			m_cwlcompositor->getToplevelViews();
-		for (auto it = toplevels.crbegin(); it != toplevels.crend(); ++it) {
-			if ((*it)->output() == m_output && !(*it)->isHidden()) {
-				renderViews << *it;
-				break;
-			}
-		}
+		renderViews = m_cwlcompositor->getViewsForOutput(m_output);
 	}
 
 	for (CwlView *view : renderViews) {

@@ -170,6 +170,13 @@ QList<CwlView *> CwlCompositor::getToplevelViews()
 	return m_workspace->getToplevelViews();
 }
 
+QList<CwlView *> CwlCompositor::getViewsForOutput(
+	QWaylandOutput *output) const
+{
+	return m_workspace ? m_workspace->getViewsForOutput(output) :
+			     QList<CwlView *>();
+}
+
 QWaylandOutput *CwlCompositor::outputForToplevel(CwlView *view)
 {
 	if (!view || view->getAppId() == "cutie-launcher")
@@ -244,6 +251,17 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 	if (!output)
 		return;
 	routeExistingViews(output, m_output);
+	for (CwlView *view : m_workspace->getAllViews()) {
+		if (view->output() != output)
+			continue;
+		if (LayerSurfaceV1 *layerSurface = view->getLayerSurface()) {
+			layerSurface->output = m_output;
+			view->setDesktopOutput(m_output, outputGeometry(m_output));
+			view->onLayerSurfaceDataChanged(layerSurface);
+		} else {
+			view->setOutput(m_output);
+		}
+	}
 	GlWindow *window = m_externalWindows.take(screen);
 	if (window)
 		window->setOutput(nullptr);
@@ -295,7 +313,7 @@ CwlView *CwlCompositor::viewAt(const QPoint &position, QWaylandOutput *output)
 				   QPointF(position) / outputScale;
 	CwlView *ret = nullptr;
 	const QList<CwlView *> views = output == m_output ? getViews()
-									 : getToplevelViews();
+								 : getViewsForOutput(output);
 	for (auto it = views.crbegin(); it != views.crend(); ++it) {
 		CwlView *view = *it;
 		if (view->output() != output)
@@ -433,8 +451,10 @@ void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 
 void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 {
-	CwlView *view = new CwlView(this, m_workspace->availableGeometry());
-	view->setOutput(m_output);
+	QWaylandOutput *output = layerSurface->output ? layerSurface->output :
+									m_output;
+	CwlView *view = new CwlView(this, outputGeometry(output));
+	view->setOutput(output);
 	view->setSurface(layerSurface->surface);
 
 	view->setLayerSurface(layerSurface);
@@ -444,10 +464,10 @@ void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 	view->layer = (CwlViewLayer)layerSurface->ls_layer;
 	m_workspace->addView(view);
 
-	if (layerSurface->ls_scope == "cutie-home")
+	if (layerSurface->ls_scope == "cutie-home" && output == m_output)
 		m_homeView = view;
 
-	if (layerSurface->ls_scope == "cutie-panel")
+	if (layerSurface->ls_scope == "cutie-panel" && output == m_output)
 		m_panelView = view;
 	connect(view->surface(), &QWaylandSurface::redraw, view,
 		&CwlView::onRedraw);
