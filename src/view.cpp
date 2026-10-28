@@ -268,8 +268,15 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 {
 	if (surface != m_layerSurface)
 		return;
+	/*
+		Full geometry of the output this surface lives on. Do not use
+		CwlCompositor::outputGeometry() for the primary output here, as it
+		returns the *available* geometry (minus panel/keyboard zones).
+	*/
+	const bool isPrimary = this->output() == m_cwlcompositor->defaultOutput();
 	const QRect screenGeometry =
-		m_cwlcompositor->outputGeometry(this->output());
+		isPrimary ? m_cwlcompositor->m_workspace->outputGeometry() :
+			    m_cwlcompositor->outputGeometry(this->output());
 	if (m_layerSurface->ls_scope == "cutie-panel" &&
 	    m_layerSurface->size.height() <= m_layerSurface->ls_zone)
 		panelState = PANEL_FOLDED;
@@ -290,8 +297,7 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 			(m_layerSurface->ls_zone < 0 ?
 				 screenGeometry.bottom() :
 				 m_availableGeometry.bottom()) -
-			m_layerSurface->size.height() + 1 -
-			qMax(0, m_layerSurface->ls_zone));
+			m_layerSurface->ls_zone);
 	else if (m_layerSurface->ls_zone < 0)
 		position.setY(screenGeometry.center()
 				      .y() -
@@ -308,8 +314,7 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 			(m_layerSurface->ls_zone < 0 ?
 				 screenGeometry.right() :
 				 m_availableGeometry.right()) -
-			m_layerSurface->size.width() + 1 -
-			qMax(0, m_layerSurface->ls_zone));
+			m_layerSurface->size.width());
 	else if (m_layerSurface->ls_zone < 0)
 		position.setX(screenGeometry.center()
 				      .x() -
