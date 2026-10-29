@@ -6,6 +6,8 @@
 #include <QElapsedTimer>
 #include <QDebug>
 
+extern int g_cwlSetPositionCalls;
+
 CwlView::CwlView(CwlCompositor *cwlcompositor, QRect geometry)
 	: m_cwlcompositor(cwlcompositor)
 	, m_availableGeometry(geometry)
@@ -57,6 +59,7 @@ QPointF CwlView::getPosition()
 
 void CwlView::setPosition(const QPointF &pos)
 {
+	++g_cwlSetPositionCalls;
 	m_position = pos;
 	m_cwlcompositor->triggerRender();
 }
