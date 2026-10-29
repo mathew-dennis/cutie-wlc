@@ -115,8 +115,14 @@ void CwlCompositor::create()
 
 		Might also be the hwcomposer issue https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html
 	*/
-	qputenv("QSG_NO_VSYNC", QByteArray("1"));
+	// Set CUTIE_CLIENT_VSYNC=1 for the compositor to let clients pace
+	// themselves on frame callbacks instead of free-running.
+	if (qgetenv("CUTIE_CLIENT_VSYNC") != "1")
+		qputenv("QSG_NO_VSYNC", QByteArray("1"));
 	qputenv("QSG_RENDER_LOOP", QByteArray("threaded"));
+	qDebug("CUTIE_PERF src=wlc ev=client_env qsg_no_vsync=\"%s\" render_loop=\"%s\"",
+	       qgetenv("QSG_NO_VSYNC").constData(),
+	       qgetenv("QSG_RENDER_LOOP").constData());
 
 	QStringList args = QStringList();
 	args.append("-c");
