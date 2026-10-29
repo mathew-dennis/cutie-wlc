@@ -20,6 +20,8 @@
 static QElapsedTimer s_clock;
 static qint64 s_paintStartNs = 0, s_paintEndNs = 0, s_maxSwapNs = 0;
 static int s_updateRequests = 0;
+static int s_animTicks = 0;
+int g_cwlSetPositionCalls = 0;
 
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
@@ -268,6 +270,7 @@ void CwlCompositor::initInputMethod()
 
 void CwlCompositor::animationValueChanged(const QVariant &value)
 {
+	++s_animTicks;
 	triggerRender();
 }
 
@@ -654,15 +657,17 @@ void CwlCompositor::endRender()
 	if (now - startNs >= 1000000000LL) {
 		qDebug("CUTIE_PERF src=wlc ev=paint ts_ms=%lld paint_fps=%d "
 		       "worst_gap_ms=%.1f worst_paintgl_ms=%.1f worst_swap_ms=%.1f "
-		       "update_requests=%d",
+		       "update_requests=%d anim_ticks=%d set_position=%d",
 		       (long long)QDateTime::currentMSecsSinceEpoch(), frames,
 		       maxGapNs / 1e6, maxPaintNs / 1e6, s_maxSwapNs / 1e6,
-		       s_updateRequests);
+		       s_updateRequests, s_animTicks, g_cwlSetPositionCalls);
 		frames = 0;
 		maxGapNs = 0;
 		maxPaintNs = 0;
 		s_maxSwapNs = 0;
 		s_updateRequests = 0;
+		s_animTicks = 0;
+		g_cwlSetPositionCalls = 0;
 		startNs = now;
 	}
 }
