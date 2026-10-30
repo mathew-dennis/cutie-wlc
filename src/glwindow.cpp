@@ -67,10 +67,11 @@ void GlWindow::initializeGL()
 {
 	m_textureBlitter.create();
 
-	// Create a simple 12x12 white fallback cursor texture
-	QImage img(12, 12, QImage::Format_RGBA8888);
-	img.fill(Qt::white);
+	// Create a 16x16 bright red fallback cursor for debugging visibility
+	QImage img(16, 16, QImage::Format_RGBA8888);
+	img.fill(Qt::red);
 	m_fallbackCursor = new QOpenGLTexture(img);
+	m_fallbackCursor->create(); // CRITICAL: Required for OpenGL texture allocation
 
 	emit glReady();
 }
@@ -163,8 +164,12 @@ void GlWindow::paintGL()
 		renderView(view);
 	}
 
-	// Render mouse cursor only when actively in use
+	// Debug & Render mouse cursor
 	if (primaryOutput && m_cwlcompositor->m_mouseActive) {
+		qDebug() << "CutieCursor: painting cursor. active=" << m_cwlcompositor->m_mouseActive
+		         << "pos=" << m_cwlcompositor->m_cursorPos
+		         << "hasCursorView=" << (m_cwlcompositor->m_cursorView != nullptr);
+
 		if (m_cwlcompositor->m_cursorView && m_cwlcompositor->m_cursorView->getTexture()) {
 			m_cwlcompositor->m_cursorView->setPosition(m_cwlcompositor->m_cursorPos - m_cwlcompositor->m_cursorHotspot);
 			m_cwlcompositor->m_cursorView->setOutput(m_output);
@@ -269,7 +274,7 @@ void GlWindow::mouseReleaseEvent(QMouseEvent *ev)
 	});
 }
 
-void GlWindow::keyPressEvent(QKeyEvent *event)
+voidGlWindow::keyPressEvent(QKeyEvent *event)
 {
 	if (event->key() == Qt::Key_PowerOff)
 		m_cwlcompositor->specialKey(

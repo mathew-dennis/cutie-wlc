@@ -36,10 +36,10 @@ CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	connect(m_layerShell, &LayerShellV1::layerShellSurfaceCreated, this,
 		&CwlCompositor::onLayerShellSurfaceCreated);
 
-	// Listen to cursor surface requests from the default seat
 	if (defaultSeat()) {
 		connect(defaultSeat(), &QWaylandSeat::cursorSurfaceRequest,
 			this, [this](QWaylandSurface *surf, int hotspotX, int hotspotY) {
+				qDebug() << "CutieCursor: cursorSurfaceRequest received! Surface:" << surf << "Hotspot:" << hotspotX << hotspotY;
 				if (m_cursorView) {
 					delete m_cursorView;
 					m_cursorView = nullptr;
@@ -131,13 +131,6 @@ void CwlCompositor::create()
 	qunsetenv("QT_SCALE_FACTOR");
 	qputenv("WAYLAND_DISPLAY", socketName());
 
-	/*
-		Use the threaded Qt Quick render loop for shell clients. There is a
-		QTBUG-51112 which MIGHT be related to our resizing issue, although it
-		describes a slightly different problem.
-
-		Might also be the hwcomposer issue https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html
-	*/
 	qputenv("QSG_NO_VSYNC", QByteArray("1"));
 	qputenv("QSG_RENDER_LOOP", QByteArray("threaded"));
 
@@ -453,8 +446,6 @@ void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 		view->setDesktopOutput(parent_view->output(),
 				       outputGeometry(parent_view->output()));
 
-	qDebug() << "Popup " << (uint64_t)view << " created";
-
 	view->setPosition(popup->unconstrainedPosition() +
 			  parent_view->getPosition());
 
@@ -462,8 +453,6 @@ void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 	if (parent_view) {
 		parent_view->addChildView(view);
 		view->setParentView(parent_view);
-		qDebug() << "Popup " << (uint64_t)view << " parented to "
-			 << (uint64_t)parent_view;
 		connect(view->surface(), &QWaylandSurface::redraw, view,
 			&CwlView::onRedraw);
 		connect(view, &QWaylandView::surfaceDestroyed, this,
@@ -482,14 +471,7 @@ void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 	    output == m_output && !m_externalOutputs.isEmpty()) {
 		output = m_externalOutputs.constBegin().value();
 		layerSurface->output = output;
-		qWarning() << "Cutie: external-scoped layer surface requested the"
-			      " primary output; routing it to external output"
-			   << layerSurface->ls_scope << output->model();
 	}
-	qInfo() << "Cutie: layer surface created"
-		<< layerSurface->ls_scope << "requested layer"
-		<< layerSurface->ls_layer << "output" << output
-		<< "output geometry" << outputGeometry(output);
 	CwlView *view = new CwlView(this, outputGeometry(output));
 	view->setOutput(output);
 	view->setSurface(layerSurface->surface);
@@ -542,7 +524,6 @@ void CwlCompositor::raise(CwlView *view)
 		m_homeOpen = false;
 		blurAnim->start();
 		
- 		// Close the launcher when switching focus to an app.
 		if (m_launcherView && launcherPosition() > 0.0)
 			launcherCloseAnim->start();
 	}
@@ -582,7 +563,8 @@ void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points,
 		output = m_output;
 
 	m_cursorPos = points.first().position();
-	m_mouseActive = true; // Mark mouse as active on movement
+	m_mouseActive = true;
+	qDebug() << "CutieCursor: mouseMoveEvent pos:" << m_cursorPos;
 
 	const qreal outputScale = qMax(1, output->scaleFactor());
 	CwlView *view = output == m_output && launcherPosition() != 0.0
