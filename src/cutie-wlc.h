@@ -11,6 +11,7 @@
 #include <QWaylandXdgDecorationManagerV1>
 #include <QScreen>
 #include <QHash>
+#include <QTimer>
 
 QT_BEGIN_NAMESPACE
 
@@ -76,6 +77,7 @@ class CwlCompositor : public QWaylandCompositor {
 	QPointF m_cursorPos;
 	QPoint m_cursorHotspot;
 	bool m_mouseActive = false;
+	QTimer *m_mouseInactivityTimer = nullptr;
 
 	CwlView *getHomeView();
 

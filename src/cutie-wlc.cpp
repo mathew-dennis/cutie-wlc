@@ -15,12 +15,14 @@
 #include <QTouchEvent>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
+#include <QTimer>
 
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
 	, m_xdgShell(new QWaylandXdgShell(this))
 	, m_layerShell(new LayerShellV1(this))
 	, m_xdgdecoration(new QWaylandXdgDecorationManagerV1())
+	, m_mouseInactivityTimer(new QTimer(this))
 {
 	m_glwindow->setCompositor(this);
 	connect(m_glwindow, &GlWindow::glReady, this, &CwlCompositor::create);
@@ -35,6 +37,14 @@ CwlCompositor::CwlCompositor(GlWindow *glwindow)
 		&CwlCompositor::onXdgPopupCreated);
 	connect(m_layerShell, &LayerShellV1::layerShellSurfaceCreated, this,
 		&CwlCompositor::onLayerShellSurfaceCreated);
+
+	// Setup inactivity timer to hide mouse cursor after 3 seconds of no movement/clicks
+	m_mouseInactivityTimer->setInterval(3000);
+	m_mouseInactivityTimer->setSingleShot(true);
+	connect(m_mouseInactivityTimer, &QTimer::timeout, this, [this]() {
+		m_mouseActive = false;
+		triggerRender();
+	});
 
 	if (defaultSeat()) {
 		connect(defaultSeat(), &QWaylandSeat::cursorSurfaceRequest,
@@ -563,6 +573,8 @@ void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points,
 
 	m_cursorPos = points.first().position();
 	m_mouseActive = true;
+	if (m_mouseInactivityTimer)
+		m_mouseInactivityTimer->start(); // Reset inactivity timer on movement
 
 	const qreal outputScale = qMax(1, output->scaleFactor());
 	CwlView *view = output == m_output && launcherPosition() != 0.0
@@ -580,6 +592,8 @@ void CwlCompositor::handleMousePressEvent(QList<QEventPoint> points,
 					  QWaylandOutput *output)
 {
 	m_mouseActive = true;
+	if (m_mouseInactivityTimer)
+		m_mouseInactivityTimer->start();
 	handleMouseMoveEvent(points, output);
 	defaultSeat()->sendMousePressEvent(btn);
 }
@@ -589,6 +603,8 @@ void CwlCompositor::handleMouseReleaseEvent(QList<QEventPoint> points,
 					    QWaylandOutput *output)
 {
 	m_mouseActive = true;
+	if (m_mouseInactivityTimer)
+		m_mouseInactivityTimer->start();
 	handleMouseMoveEvent(points, output);
 	defaultSeat()->sendMouseReleaseEvent(btn);
 }
