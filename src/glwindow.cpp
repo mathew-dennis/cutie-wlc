@@ -274,7 +274,7 @@ void GlWindow::mouseReleaseEvent(QMouseEvent *ev)
 	});
 }
 
-voidGlWindow::keyPressEvent(QKeyEvent *event)
+void GlWindow::keyPressEvent(QKeyEvent *event)
 {
 	if (event->key() == Qt::Key_PowerOff)
 		m_cwlcompositor->specialKey(
