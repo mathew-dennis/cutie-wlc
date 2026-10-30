@@ -66,6 +66,12 @@ void GlWindow::setDisplayOff(bool displayOff)
 void GlWindow::initializeGL()
 {
 	m_textureBlitter.create();
+
+	// Create a simple 12x12 white fallback cursor texture for unmanaged areas (like home screen / layer-shells)
+	QImage img(12, 12, QImage::Format_RGBA8888);
+	img.fill(Qt::white);
+	m_fallbackCursor = new QOpenGLTexture(img);
+
 	emit glReady();
 }
 
@@ -157,12 +163,27 @@ void GlWindow::paintGL()
 		renderView(view);
 	}
 
-	// Render mouse cursor on the primary output
-	if (primaryOutput && m_cwlcompositor->m_cursorView) {
-		m_cwlcompositor->m_cursorView->setPosition(m_cwlcompositor->m_cursorPos - m_cwlcompositor->m_cursorHotspot);
-		m_cwlcompositor->m_cursorView->setOutput(m_output);
-		m_textureBlitter.setOpacity(1.0);
-		renderView(m_cwlcompositor->m_cursorView);
+	// Render mouse cursor on the primary output with fallback support for layer-shells / home screen
+	if (primaryOutput) {
+		if (m_cwlcompositor->m_cursorView && m_cwlcompositor->m_cursorView->getTexture()) {
+			m_cwlcompositor->m_cursorView->setPosition(m_cwlcompositor->m_cursorPos - m_cwlcompositor->m_cursorHotspot);
+			m_cwlcompositor->m_cursorView->setOutput(m_output);
+			m_textureBlitter.setOpacity(1.0);
+			renderView(m_cwlcompositor->m_cursorView);
+		} else if (m_fallbackCursor) {
+			const qreal outputScale = m_output->scaleFactor();
+			QRectF targetRect(
+				m_cwlcompositor->m_cursorPos * outputScale,
+				QSizeF(16, 16) * outputScale
+			);
+			QMatrix4x4 targetTransform = QOpenGLTextureBlitter::targetTransform(
+				targetRect, QRect(QPoint(), size())
+			);
+			m_textureBlitter.bind(m_fallbackCursor->target());
+			m_textureBlitter.setOpacity(1.0);
+			m_textureBlitter.blit(m_fallbackCursor->textureId(), targetTransform,
+					      QOpenGLTextureBlitter::OriginTopLeft);
+		}
 	}
 
 	m_textureBlitter.release();

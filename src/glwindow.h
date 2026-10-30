@@ -54,6 +54,7 @@ class GlWindow : public QOpenGLWindow {
 
 	CwlCompositor *m_cwlcompositor = nullptr;
 	CwlGesture *m_gesture = nullptr;
+	QOpenGLTexture *m_fallbackCursor = nullptr;
 };
 
 QT_END_NAMESPACE
