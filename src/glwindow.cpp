@@ -67,42 +67,17 @@ void GlWindow::initializeGL()
 {
 	m_textureBlitter.create();
 
-	// Try loading a standard system cursor icon from the active icon theme
+	// Load the standard arrow cursor pixmap directly from Qt/system
 	QImage img;
-	QStringList cursorNames = {"left_ptr", "arrow", "pointer", "default"};
-	for (const QString &name : cursorNames) {
-		QIcon icon = QIcon::fromTheme(name);
-		if (!icon.isNull()) {
-			QPixmap pixmap = icon.pixmap(24, 24);
-			if (!pixmap.isNull()) {
-				img = pixmap.toImage().convertToFormat(QImage::Format_RGBA8888);
-				break;
-			}
-		}
-	}
-
-	// Fallback to our clean drawn arrow if no system theme cursor is found
-	if (img.isNull()) {
+	QCursor cursor(Qt::ArrowCursor);
+	QPixmap pixmap = cursor.pixmap();
+	
+	if (!pixmap.isNull()) {
+		img = pixmap.toImage().convertToFormat(QImage::Format_RGBA8888);
+	} else {
+		// Ultimate fallback if pixmap is empty
 		img = QImage(24, 24, QImage::Format_RGBA8888);
-		img.fill(Qt::transparent);
-
-		QPainter painter(&img);
-		painter.setRenderHint(QPainter::Antialiasing, true);
-
-		QPainterPath path;
-		path.moveTo(2, 2);
-		path.lineTo(2, 20);
-		path.lineTo(8, 14);
-		path.lineTo(14, 20);
-		path.lineTo(17, 17);
-		path.lineTo(11, 11);
-		path.lineTo(18, 11);
-		path.closeSubpath();
-
-		painter.setPen(QPen(Qt::black, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-		painter.setBrush(Qt::white);
-		painter.drawPath(path);
-		painter.end();
+		img.fill(Qt::red);
 	}
 
 	m_fallbackCursor = new QOpenGLTexture(img);
