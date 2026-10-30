@@ -17,8 +17,6 @@ GlWindow::GlWindow()
 	QGuiApplication::platformNativeInterface()->nativeResourceForIntegration(
 		"displayon");
 	m_displayOff = false;
-	
-	setMouseTracking(true); // Enables free-roam mouse move events without requiring a click
 }
 
 void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
@@ -241,9 +239,9 @@ void GlWindow::mouseMoveEvent(QMouseEvent *ev)
 		m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
 		return;
 	}
-	m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
-		m_cwlcompositor->handleMouseMoveEvent(points, m_output);
-	});
+	// Directly update cursor position and trigger render on any mouse move event
+	m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
+	m_cwlcompositor->triggerRender();
 }
 
 void GlWindow::mousePressEvent(QMouseEvent *ev)
