@@ -17,6 +17,8 @@ GlWindow::GlWindow()
 	QGuiApplication::platformNativeInterface()->nativeResourceForIntegration(
 		"displayon");
 	m_displayOff = false;
+	
+	setMouseTracking(true); // Crucial: enables free-roam mouse move events without clicking
 }
 
 void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
