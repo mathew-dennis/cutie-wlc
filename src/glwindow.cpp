@@ -239,11 +239,21 @@ void GlWindow::mouseMoveEvent(QMouseEvent *ev)
 		m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
 		return;
 	}
-	// Directly update cursor position and trigger render on any mouse move event
-	m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
-	m_cwlcompositor->triggerRender();
-}
 
+	// 1. Instantly update cursor position and trigger a frame render 
+	// so the fallback cursor tracks freely without waiting for a click.
+	if (!ev->points().isEmpty()) {
+		m_cwlcompositor->m_cursorPos = ev->points().first().position();
+		m_cwlcompositor->m_mouseActive = true;
+		m_cwlcompositor->triggerRender();
+	}
+
+	// 2. Pass the event to the gesture engine so edge-swipes and corners 
+	// continue to work exactly as designed.
+	m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
+		m_cwlcompositor->handleMouseMoveEvent(points, m_output);
+	});
+}
 void GlWindow::mousePressEvent(QMouseEvent *ev)
 {
 	Qt::MouseButton btn = ev->button();
