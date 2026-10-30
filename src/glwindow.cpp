@@ -164,12 +164,8 @@ void GlWindow::paintGL()
 		renderView(view);
 	}
 
-	// Debug & Render mouse cursor
+	// Render mouse cursor only when actively in use
 	if (primaryOutput && m_cwlcompositor->m_mouseActive) {
-		qDebug() << "CutieCursor: painting cursor. active=" << m_cwlcompositor->m_mouseActive
-		         << "pos=" << m_cwlcompositor->m_cursorPos
-		         << "hasCursorView=" << (m_cwlcompositor->m_cursorView != nullptr);
-
 		if (m_cwlcompositor->m_cursorView && m_cwlcompositor->m_cursorView->getTexture()) {
 			m_cwlcompositor->m_cursorView->setPosition(m_cwlcompositor->m_cursorPos - m_cwlcompositor->m_cursorHotspot);
 			m_cwlcompositor->m_cursorView->setOutput(m_output);
@@ -177,8 +173,9 @@ void GlWindow::paintGL()
 			renderView(m_cwlcompositor->m_cursorView);
 		} else if (m_fallbackCursor) {
 			QRectF targetRect(
-				m_cwlcompositor->m_cursorPos * outputScale,
-				QSizeF(16, 16) * outputScale
+				m_cwlcompositor->m_cursorPos.x(),
+				m_cwlcompositor->m_cursorPos.y(),
+				24, 24
 			);
 			QMatrix4x4 targetTransform = QOpenGLTextureBlitter::targetTransform(
 				targetRect, QRect(QPoint(), size())
