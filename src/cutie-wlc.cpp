@@ -13,6 +13,7 @@
 #include <QScreen>
 #include <QElapsedTimer>
 #include <QDateTime>
+#include <QAnimationDriver>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
@@ -22,6 +23,29 @@ static qint64 s_paintStartNs = 0, s_paintEndNs = 0, s_maxSwapNs = 0;
 static int s_updateRequests = 0;
 static int s_animTicks = 0;
 int g_cwlSetPositionCalls = 0;
+
+// Advances compositor animations once per painted frame instead of on Qt's
+// default 16 ms timer, so they run at the display refresh rate.
+// Enabled with CUTIE_FRAME_ANIM=1.
+class FrameAnimationDriver : public QAnimationDriver
+{
+    public:
+	explicit FrameAnimationDriver(CwlCompositor *compositor)
+		: QAnimationDriver(compositor), m_compositor(compositor)
+	{
+	}
+
+    protected:
+	void start() override
+	{
+		QAnimationDriver::start();
+		m_compositor->triggerRender();
+	}
+
+    private:
+	CwlCompositor *m_compositor;
+};
+static FrameAnimationDriver *s_animDriver = nullptr;
 
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
@@ -74,6 +98,11 @@ void CwlCompositor::create()
 	       (double)hz, (int)mode.refreshRate());
 	m_output->addMode(mode, true);
 	QWaylandCompositor::create();
+	if (qgetenv("CUTIE_FRAME_ANIM") == "1") {
+		s_animDriver = new FrameAnimationDriver(this);
+		s_animDriver->install();
+	}
+	qDebug("CUTIE_PERF src=wlc ev=anim_driver frame_synced=%d", s_animDriver ? 1 : 0);
 	connect(m_glwindow, &QOpenGLWindow::frameSwapped, this, [] {
 		s_maxSwapNs = qMax(s_maxSwapNs,
 				   s_clock.nsecsElapsed() - s_paintEndNs);
@@ -631,6 +660,9 @@ void CwlCompositor::startRender()
 	if (!s_clock.isValid())
 		s_clock.start();
 	s_paintStartNs = s_clock.nsecsElapsed();
+
+	if (s_animDriver && s_animDriver->isRunning())
+		s_animDriver->advance();
 
 	QWaylandOutput *out = defaultOutput();
 	if (out)
