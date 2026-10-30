@@ -36,6 +36,24 @@ CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	connect(m_layerShell, &LayerShellV1::layerShellSurfaceCreated, this,
 		&CwlCompositor::onLayerShellSurfaceCreated);
 
+	// Listen to cursor surface changes from the default pointer seat
+	if (defaultSeat() && defaultSeat()->pointer()) {
+		connect(defaultSeat()->pointer(), &QWaylandPointer::cursorSurfaceChanged,
+			this, [this]() {
+				if (m_cursorView) {
+					delete m_cursorView;
+					m_cursorView = nullptr;
+				}
+				QWaylandSurface *surf = defaultSeat()->pointer()->cursorSurface();
+				if (surf) {
+					m_cursorView = new CwlView(this, QRect());
+					m_cursorView->setSurface(surf);
+					connect(surf, &QWaylandSurface::redraw, this, &CwlCompositor::triggerRender);
+				}
+				triggerRender();
+			});
+	}
+
 	blurAnim->setDuration(250);
 	unblurAnim->setDuration(250);
 	launcherOpenAnim->setDuration(250);
@@ -562,6 +580,9 @@ void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points,
 		return;
 	if (!output)
 		output = m_output;
+
+	m_cursorPos = points.first().position(); // Save current mouse position
+
 	const qreal outputScale = qMax(1, output->scaleFactor());
 	CwlView *view = output == m_output && launcherPosition() != 0.0
 			? m_launcherView
@@ -767,6 +788,11 @@ bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)
 void CwlCompositor::viewSurfaceDestroyed()
 {
 	CwlView *view = qobject_cast<CwlView *>(sender());
+	if (view == m_cursorView) {
+		m_cursorView = nullptr;
+		return;
+	}
+
 	CwlView *parent = view->parentView();
 
 	if (parent != nullptr) {
