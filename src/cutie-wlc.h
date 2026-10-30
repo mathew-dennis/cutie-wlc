@@ -72,6 +72,8 @@ class CwlCompositor : public QWaylandCompositor {
 
 	CwlView *m_launcherView = nullptr;
 	CwlWorkspace *m_workspace = nullptr;
+	CwlView *m_cursorView = nullptr; // Added for mouse cursor
+	QPointF m_cursorPos;             // Added to track mouse position
 
 	CwlView *getHomeView();
 
