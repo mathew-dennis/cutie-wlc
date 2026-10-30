@@ -18,7 +18,7 @@ GlWindow::GlWindow()
 		"displayon");
 	m_displayOff = false;
 	
-	setMouseTracking(true); // Crucial: enables free-roam mouse move events without clicking
+	setMouseTracking(true); // Enables free-roam mouse move events without requiring a click
 }
 
 void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
@@ -69,11 +69,10 @@ void GlWindow::initializeGL()
 {
 	m_textureBlitter.create();
 
-	// Create a 16x16 bright red fallback cursor for debugging visibility
 	QImage img(16, 16, QImage::Format_RGBA8888);
 	img.fill(Qt::red);
 	m_fallbackCursor = new QOpenGLTexture(img);
-	m_fallbackCursor->create(); // CRITICAL: Required for OpenGL texture allocation
+	m_fallbackCursor->create();
 
 	emit glReady();
 }

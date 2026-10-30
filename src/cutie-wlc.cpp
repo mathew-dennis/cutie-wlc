@@ -39,7 +39,6 @@ CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	if (defaultSeat()) {
 		connect(defaultSeat(), &QWaylandSeat::cursorSurfaceRequest,
 			this, [this](QWaylandSurface *surf, int hotspotX, int hotspotY) {
-				qDebug() << "CutieCursor: cursorSurfaceRequest received! Surface:" << surf << "Hotspot:" << hotspotX << hotspotY;
 				if (m_cursorView) {
 					delete m_cursorView;
 					m_cursorView = nullptr;
@@ -564,7 +563,6 @@ void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points,
 
 	m_cursorPos = points.first().position();
 	m_mouseActive = true;
-	qDebug() << "CutieCursor: mouseMoveEvent pos:" << m_cursorPos;
 
 	const qreal outputScale = qMax(1, output->scaleFactor());
 	CwlView *view = output == m_output && launcherPosition() != 0.0
