@@ -36,15 +36,15 @@ CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	connect(m_layerShell, &LayerShellV1::layerShellSurfaceCreated, this,
 		&CwlCompositor::onLayerShellSurfaceCreated);
 
-	// Listen to cursor surface changes from the default pointer seat
-	if (defaultSeat() && defaultSeat()->pointer()) {
-		connect(defaultSeat()->pointer(), &QWaylandPointer::cursorSurfaceChanged,
-			this, [this]() {
+	// Listen to cursor surface requests from the default seat
+	if (defaultSeat()) {
+		connect(defaultSeat(), &QWaylandSeat::cursorSurfaceRequest,
+			this, [this](QWaylandSurface *surf, int hotspotX, int hotspotY) {
 				if (m_cursorView) {
 					delete m_cursorView;
 					m_cursorView = nullptr;
 				}
-				QWaylandSurface *surf = defaultSeat()->pointer()->cursorSurface();
+				m_cursorHotspot = QPoint(hotspotX, hotspotY);
 				if (surf) {
 					m_cursorView = new CwlView(this, QRect());
 					m_cursorView->setSurface(surf);

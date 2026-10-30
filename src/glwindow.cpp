@@ -11,7 +11,6 @@
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qplatformscreen.h>
 #include <QtWaylandCompositor/QWaylandSeat>
-#include <QWaylandPointer>
 
 GlWindow::GlWindow()
 {
@@ -159,10 +158,8 @@ void GlWindow::paintGL()
 	}
 
 	// Render mouse cursor on the primary output
-	if (primaryOutput && m_cwlcompositor->m_cursorView && m_cwlcompositor->defaultSeat() && m_cwlcompositor->defaultSeat()->pointer()) {
-		QWaylandPointer *pointer = m_cwlcompositor->defaultSeat()->pointer();
-		QPoint hotspot = pointer->cursorHotspot();
-		m_cwlcompositor->m_cursorView->setPosition(m_cwlcompositor->m_cursorPos - hotspot);
+	if (primaryOutput && m_cwlcompositor->m_cursorView) {
+		m_cwlcompositor->m_cursorView->setPosition(m_cwlcompositor->m_cursorPos - m_cwlcompositor->m_cursorHotspot);
 		m_cwlcompositor->m_cursorView->setOutput(m_output);
 		m_textureBlitter.setOpacity(1.0);
 		renderView(m_cwlcompositor->m_cursorView);
