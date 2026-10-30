@@ -581,7 +581,8 @@ void CwlCompositor::handleMouseMoveEvent(QList<QEventPoint> points,
 	if (!output)
 		output = m_output;
 
-	m_cursorPos = points.first().position(); // Save current mouse position
+	m_cursorPos = points.first().position();
+	m_mouseActive = true; // Mark mouse as active on movement
 
 	const qreal outputScale = qMax(1, output->scaleFactor());
 	CwlView *view = output == m_output && launcherPosition() != 0.0
@@ -598,6 +599,7 @@ void CwlCompositor::handleMousePressEvent(QList<QEventPoint> points,
 					  Qt::MouseButton btn,
 					  QWaylandOutput *output)
 {
+	m_mouseActive = true;
 	handleMouseMoveEvent(points, output);
 	defaultSeat()->sendMousePressEvent(btn);
 }
@@ -606,6 +608,7 @@ void CwlCompositor::handleMouseReleaseEvent(QList<QEventPoint> points,
 					    Qt::MouseButton btn,
 					    QWaylandOutput *output)
 {
+	m_mouseActive = true;
 	handleMouseMoveEvent(points, output);
 	defaultSeat()->sendMouseReleaseEvent(btn);
 }

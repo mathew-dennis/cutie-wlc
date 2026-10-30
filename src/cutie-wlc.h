@@ -75,6 +75,7 @@ class CwlCompositor : public QWaylandCompositor {
 	CwlView *m_cursorView = nullptr;
 	QPointF m_cursorPos;
 	QPoint m_cursorHotspot;
+	bool m_mouseActive = false; // Tracks whether the mouse is actively being used
 
 	CwlView *getHomeView();
 
