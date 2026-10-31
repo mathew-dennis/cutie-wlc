@@ -5,6 +5,8 @@
 #include <QMatrix4x4>
 #include <QOpenGLFunctions>
 #include <QOpenGLTexture>
+#include <QCursor>
+#include <QPixmap>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QGuiApplication>
@@ -65,6 +67,38 @@ void GlWindow::setDisplayOff(bool displayOff)
 void GlWindow::initializeGL()
 {
 	m_textureBlitter.create();
+
+	// Build the software cursor texture for this window up front, in
+	// its own GL context — the same mechanism the working pointer on
+	// the multi-desktop branch uses. Creating it lazily from inside
+	// paintGL() left the big screen without a usable texture.
+	QImage cursorImage;
+	QPixmap systemArrow = QCursor(Qt::ArrowCursor).pixmap();
+	if (!systemArrow.isNull())
+		cursorImage =
+			systemArrow.toImage().convertToFormat(QImage::Format_RGBA8888);
+	if (cursorImage.isNull()) {
+		cursorImage = QImage(24, 24, QImage::Format_RGBA8888);
+		cursorImage.fill(Qt::transparent);
+		QPainter painter(&cursorImage);
+		painter.setRenderHint(QPainter::Antialiasing);
+		painter.setPen(QPen(Qt::black, 1));
+		painter.setBrush(Qt::white);
+		QPainterPath arrow;
+		arrow.moveTo(1.5, 1.5);
+		arrow.lineTo(1.5, 16.5);
+		arrow.lineTo(5.5, 12.5);
+		arrow.lineTo(8.5, 19.5);
+		arrow.lineTo(10.5, 18.5);
+		arrow.lineTo(7.5, 11.5);
+		arrow.lineTo(12.5, 11.5);
+		arrow.closeSubpath();
+		painter.drawPath(arrow);
+		painter.end();
+	}
+	m_cursorTexture = new QOpenGLTexture(cursorImage);
+	m_cursorTexture->create();
+
 	emit glReady();
 }
 
@@ -185,12 +219,14 @@ void GlWindow::mouseMoveEvent(QMouseEvent *ev)
 {
     if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
         // Track the pointer for the software cursor before routing
-        // the event to the client underneath.
+        // the event to the client underneath, and repaint right away
+        // so the cursor keeps up with the mouse instead of waiting
+        // for the next client commit.
         m_cursorPosition =
             ev->position() / qMax(1, m_output->scaleFactor());
         m_cursorVisible = true;
         m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
-        requestUpdate();
+        m_cwlcompositor->triggerRender();
         return;
     }
     m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
@@ -288,43 +324,27 @@ void GlWindow::wheelEvent(QWheelEvent *ev)
 
 void GlWindow::renderCursor()
 {
-    // The hwcomposer hardware cursor only covers the built-in screen,
-    // so external outputs get a software cursor composited on top of
-    // the views.
-    QWaylandOutput *primaryOutput = m_cwlcompositor->defaultOutput();
-    if (!m_output || !m_cursorVisible || m_output == primaryOutput)
-        return;
+	// The hwcomposer hardware cursor only covers the built-in screen,
+	// so external outputs get a software cursor composited on top of
+	// the views.
+	QWaylandOutput *primaryOutput = m_cwlcompositor->defaultOutput();
+	if (!m_output || !m_cursorVisible || m_output == primaryOutput)
+		return;
+	if (!m_cursorTexture || !m_cursorTexture->isCreated())
+		return;
 
-    if (!m_cursorTexture) {
-        QImage image(24, 24, QImage::Format_RGBA8888);
-        image.fill(Qt::transparent);
-        QPainter painter(&image);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(Qt::black, 1));
-        painter.setBrush(Qt::white);
-        QPainterPath arrow;
-        arrow.moveTo(1.5, 1.5);
-        arrow.lineTo(1.5, 16.5);
-        arrow.lineTo(5.5, 12.5);
-        arrow.lineTo(8.5, 19.5);
-        arrow.lineTo(10.5, 18.5);
-        arrow.lineTo(7.5, 11.5);
-        arrow.lineTo(12.5, 11.5);
-        arrow.closeSubpath();
-        painter.drawPath(arrow);
-        painter.end();
-        m_cursorTexture = new QOpenGLTexture(image);
-	}
-
-	if (m_cursorTexture->target() != m_currentTarget) {
-		m_currentTarget = m_cursorTexture->target();
-		m_textureBlitter.bind(m_currentTarget);
-	}
+	// Same draw sequence as the working pointer on the multi-desktop
+	// branch: bind the texture target explicitly, draw at full
+	// opacity, blit with a top-left origin.
+	m_currentTarget = m_cursorTexture->target();
+	m_textureBlitter.bind(m_currentTarget);
+	m_textureBlitter.setOpacity(1.0);
 
 	const int outputScale = qMax(1, m_output->scaleFactor());
-	const QRectF targetRect(m_cursorPosition * outputScale,
-				QSizeF(24, 24) * outputScale);
-	m_textureBlitter.setOpacity(1.0);
+	const QRectF targetRect(
+		m_cursorPosition * outputScale,
+		QSizeF(m_cursorTexture->width(), m_cursorTexture->height()) *
+			outputScale);
 	m_textureBlitter.blit(m_cursorTexture->textureId(),
 			      QOpenGLTextureBlitter::targetTransform(
 				      targetRect, QRect(QPoint(), size())),
