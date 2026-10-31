@@ -5,6 +5,7 @@
 #include <screencopy.h>
 #include <foreign-toplevel-management.h>
 #include <input-method-v2.h>
+#include <rawpointer.h>
 
 #include <QtWaylandCompositor/QWaylandSeat>
 #include <QtWaylandCompositor/QWaylandOutput>
@@ -86,6 +87,10 @@ void CwlCompositor::create()
 	m_output->setCurrentMode(mode);
 	m_output->setScaleFactor(m_scaleFactor);
 	m_glwindow->setOutput(m_output);
+
+	m_rawPointer = new RawPointer(this);
+	connect(m_rawPointer, &RawPointer::motion, this,
+		&CwlCompositor::onRawMotion);
 
 	// The default seat only exists after create().
 	connect(defaultSeat(), &QWaylandSeat::cursorSurfaceRequest, this,
@@ -298,6 +303,8 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 		return;
 	if (output && m_cursorOutput == output)
 		m_cursorOutput = nullptr;
+	if (output && m_captureOutput == output)
+		m_captureOutput = nullptr;
 
 	if (output) {
 		routeExistingViews(output, m_output);
@@ -855,6 +862,41 @@ void CwlCompositor::handleKeyRelease(quint32 nativeScanCode)
 	defaultSeat()->sendKeyReleaseEvent(nativeScanCode);
 }
 
+// Qt clamps the pointer to the primary screen, so the mouse could never leave
+// it. The external screen is to the right of the phone screen: pushing against
+// the right edge moves the pointer onto it, pushing back past its left edge
+// returns to the phone screen.
+void CwlCompositor::onRawMotion(int dx, int dy)
+{
+	if (!m_captureOutput) {
+		if (dx <= 0 || m_externalOutputs.isEmpty() ||
+		    m_cursorOutput != m_output ||
+		    m_primaryPos.x() < m_glwindow->width() - 2)
+			return;
+		m_captureOutput = m_externalOutputs.constBegin().value();
+		m_capturePos = QPointF(0, m_primaryPos.y());
+	}
+
+	const qreal scale = qMax(1, m_captureOutput->scaleFactor());
+	const QSizeF size = outputFullGeometry(m_captureOutput).size() * scale;
+	m_capturePos += QPointF(dx, dy);
+
+	if (m_capturePos.x() < 0) {
+		m_captureOutput = nullptr;
+		updateCursor(QPointF(m_glwindow->width() - 1,
+				     qBound(0.0, m_capturePos.y(),
+					    m_glwindow->height() - 1.0)),
+			     m_output);
+		handleMouseMoveEvent(m_cursorPos, m_output);
+		return;
+	}
+
+	m_capturePos.setX(qMin(m_capturePos.x(), size.width() - 1));
+	m_capturePos.setY(qBound(0.0, m_capturePos.y(), size.height() - 1));
+	updateCursor(m_capturePos, m_captureOutput);
+	handleMouseMoveEvent(m_capturePos, m_captureOutput);
+}
+
 void CwlCompositor::updateCursor(const QPointF &position, QWaylandOutput *output)
 {
 	if (!output)
@@ -865,6 +907,8 @@ void CwlCompositor::updateCursor(const QPointF &position, QWaylandOutput *output
 			<< "output at" << position;
 	m_cursorPos = position;
 	m_cursorOutput = output;
+	if (output == m_output)
+		m_primaryPos = position;
 	m_mouseActive = true;
 	m_mouseInactivityTimer->start();
 	triggerRender();

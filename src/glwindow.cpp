@@ -199,6 +199,10 @@ bool GlWindow::ownsPointer(QWaylandOutput *output) const
 QWaylandOutput *GlWindow::pointerTarget(const QMouseEvent *ev,
 					QPointF *local) const
 {
+	if (m_cwlcompositor->pointerCaptured()) {
+		*local = m_cwlcompositor->m_capturePos;
+		return m_cwlcompositor->m_captureOutput;
+	}
 	*local = ev->position();
 	QWaylandOutput *output =
 		m_cwlcompositor->outputAtGlobal(ev->globalPosition(), local);

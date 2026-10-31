@@ -16,6 +16,7 @@ QT_BEGIN_NAMESPACE
 
 class QScreen;
 class GlWindow;
+class RawPointer;
 class CwlWorkspace;
 class CutieShell;
 class OutputManagerV1;
@@ -73,6 +74,13 @@ class CwlCompositor : public QWaylandCompositor {
 
 	void updateCursor(const QPointF &position, QWaylandOutput *output);
 
+	// While the pointer is on the external screen, the position comes from
+	// RawPointer and Qt's own (clamped) mouse positions are ignored.
+	bool pointerCaptured() const
+	{
+		return m_captureOutput != nullptr;
+	}
+
 	int scaleFactor();
 	void setScaleFactor(int scale);
 
@@ -91,6 +99,9 @@ class CwlCompositor : public QWaylandCompositor {
 	QPoint m_cursorHotspot;
 	bool m_cursorHidden = false;
 	bool m_mouseActive = false;
+	QWaylandOutput *m_captureOutput = nullptr;
+	QPointF m_capturePos;
+	QPointF m_primaryPos;
 
 	CwlView *getHomeView();
 
@@ -124,6 +135,7 @@ class CwlCompositor : public QWaylandCompositor {
 	void onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface);
 	void viewSurfaceDestroyed();
 	void initInputMethod();
+	void onRawMotion(int dx, int dy);
 	void animationValueChanged(const QVariant &value);
 	void createExternalOutput(QScreen *screen, GlWindow *window);
 	void routeExistingViews(QWaylandOutput *from, QWaylandOutput *to);
@@ -162,6 +174,7 @@ class CwlCompositor : public QWaylandCompositor {
 	int m_scaleFactor = 1;
 	bool m_created = false;
 	QTimer *m_mouseInactivityTimer = nullptr;
+	RawPointer *m_rawPointer = nullptr;
 	double m_blur = 0.0;
 	double m_launcherPosition = 1.0;
 	bool m_homeOpen = true;
