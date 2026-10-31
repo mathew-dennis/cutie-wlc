@@ -193,7 +193,7 @@ void GlWindow::mouseMoveEvent(QMouseEvent *ev)
         requestUpdate();
         return;
     }
-    m_gesture->handlePointerEvent(ev, this {
+    m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
         m_cwlcompositor->handleMouseMoveEvent(points, m_output);
     });
 }
