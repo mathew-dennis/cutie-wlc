@@ -16,6 +16,7 @@ QT_BEGIN_NAMESPACE
 
 class QScreen;
 class QKeyEvent;
+class QWheelEvent;
 class GlWindow;
 class CwlWorkspace;
 class CutieShell;
@@ -62,6 +63,10 @@ class CwlCompositor : public QWaylandCompositor {
 	void minimizeView(CwlView *view);
 	void restoreView(CwlView *view);
 	bool handleExternalKeyShortcut(QKeyEvent *event);
+
+	// Mouse and keyboard input on external outputs ("the big screen").
+	void forwardKeyEvent(QKeyEvent *event);
+	void handleMouseWheelEvent(QWheelEvent *event, QWaylandOutput *output);
 
 	bool handleGesture(QPointerEvent *ev, int edge, int corner);
 
@@ -119,6 +124,7 @@ class CwlCompositor : public QWaylandCompositor {
 
     private:
 	CwlView *findView(const QWaylandSurface *s) const;
+	void focusFallbackView(CwlView *excluded);
 	GlWindow *m_glwindow = nullptr;
 	QWaylandXdgShell *m_xdgShell = nullptr;
 	QPointer<CwlView> m_mouseView;

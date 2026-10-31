@@ -14,6 +14,7 @@
 #include <QWaylandTouch>
 #include <QTouchEvent>
 #include <QKeyEvent>
+#include <QWheelEvent>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
@@ -563,6 +564,16 @@ void CwlCompositor::handleMousePressEvent(QList<QEventPoint> points,
 					  Qt::MouseButton btn,
 					  QWaylandOutput *output)
 {
+	// Clicking a toplevel on the big screen raises it and hands it the
+	// keyboard focus, like a desktop environment would.
+	if (output && output != m_output && !points.isEmpty()) {
+		CwlView *view =
+			viewAt(points.first().position().toPoint(), output);
+		if (view && view->isToplevel() && !view->isMinimized() &&
+		    view->getAppId() != "cutie-launcher")
+			raise(view);
+	}
+
 	handleMouseMoveEvent(points, output);
 	defaultSeat()->sendMousePressEvent(btn);
 }
@@ -600,6 +611,10 @@ void CwlCompositor::minimizeView(CwlView *view)
 	view->requestMinimize();
 	m_minimizedViews.removeAll(view);
 	m_minimizedViews.append(view);
+	// Never leave the keyboard focused on a window that is no longer
+	// visible; hand the focus to the next usable toplevel instead.
+	if (defaultSeat()->keyboardFocus() == view->surface())
+		focusFallbackView(view);
 	triggerRender();
 }
 
@@ -664,6 +679,71 @@ bool CwlCompositor::handleExternalKeyShortcut(QKeyEvent *event)
 	default:
 		return false;
 	}
+}
+
+void CwlCompositor::forwardKeyEvent(QKeyEvent *event)
+{
+	// Regular typing from the big screen is delivered to the client
+	// that owns the keyboard focus. System keys (power, volume) keep
+	// their special handling in GlWindow and are filtered out here.
+	if (!event || !m_created)
+		return;
+	if (event->key() == Qt::Key_PowerOff ||
+	    event->key() == Qt::Key_VolumeUp ||
+	    event->key() == Qt::Key_VolumeDown)
+		return;
+	if (!defaultSeat()->keyboardFocus())
+		return;
+	defaultSeat()->sendFullKeyEvent(event);
+}
+
+void CwlCompositor::handleMouseWheelEvent(QWheelEvent *event,
+					  QWaylandOutput *output)
+{
+	// Wheel events go to the client under the pointer. The seat's mouse
+	// focus is updated first so clients receive them on the correct
+	// surface.
+	if (!event || !output)
+		return;
+
+	const QPointF position = event->position();
+	CwlView *view = viewAt(position.toPoint(), output);
+	if (!view || !view->surface())
+		return;
+
+	const qreal outputScale = qMax(1, output->scaleFactor());
+	defaultSeat()->sendMouseMoveEvent(
+		view, output->position() + position / outputScale -
+			      view->getPosition());
+
+	const QPoint angle = event->angleDelta();
+	if (angle.y() != 0)
+		defaultSeat()->sendMouseWheelEvent(Qt::Vertical, angle.y());
+	if (angle.x() != 0)
+		defaultSeat()->sendMouseWheelEvent(Qt::Horizontal, angle.x());
+}
+
+void CwlCompositor::focusFallbackView(CwlView *excluded)
+{
+	// Hand the keyboard focus to the topmost remaining toplevel on the
+	// same output as the view that lost it, or drop the focus entirely
+	// so the next tap or click re-focuses cleanly.
+	QWaylandOutput *output = excluded ? excluded->output() : nullptr;
+	const QList<CwlView *> toplevels = getToplevelViews();
+	for (auto it = toplevels.crbegin(); it != toplevels.crend(); ++it) {
+		CwlView *view = *it;
+		if (!view || view == excluded || !view->surface())
+			continue;
+		if (view->isMinimized() || view->isHidden())
+			continue;
+		if (view->getAppId() == "cutie-launcher")
+			continue;
+		if (output && view->output() != output)
+			continue;
+		raise(view);
+		return;
+	}
+	defaultSeat()->setKeyboardFocus(nullptr);
 }
 
 bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)

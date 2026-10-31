@@ -1,10 +1,12 @@
 #include <glwindow.h>
 
 #include <QPainter>
+#include <QPainterPath>
 #include <QMatrix4x4>
 #include <QOpenGLFunctions>
 #include <QOpenGLTexture>
 #include <QMouseEvent>
+#include <QWheelEvent>
 #include <QGuiApplication>
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qplatformscreen.h>
@@ -126,6 +128,11 @@ void GlWindow::paintGL()
 		renderView(view);
 	}
 
+	// The big screen has no hardware cursor; draw the software cursor
+	// on top of the views while the blitter is still bound.
+	if (!primaryOutput)
+		renderCursor();
+
 	m_textureBlitter.release();
 	m_cwlcompositor->endRender(m_output);
 }
@@ -177,7 +184,13 @@ void GlWindow::touchEvent(QTouchEvent *ev)
 void GlWindow::mouseMoveEvent(QMouseEvent *ev)
 {
 	if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
+		// Track the pointer for the software cursor before routing
+		// the event to the client underneath.
+		m_cursorPosition =
+			ev->position() / qMax(1, m_output->scaleFactor());
+		m_cursorVisible = true;
 		m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
+		requestUpdate();
 		return;
 	}
 	m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
@@ -189,7 +202,13 @@ void GlWindow::mousePressEvent(QMouseEvent *ev)
 {
 	Qt::MouseButton btn = ev->button();
 	if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
-		m_cwlcompositor->handleMousePressEvent(ev->points(), btn, m_output);
+		// Clicks land on the software cursor position too, so the
+		// cursor stays glued to the pointer even without motion.
+		m_cursorPosition =
+			ev->position() / qMax(1, m_output->scaleFactor());
+		m_cursorVisible = true;
+		m_cwlcompositor->handleMousePressEvent(ev->points(), btn,
+						       m_output);
 		return;
 	}
 	m_gesture->handlePointerEvent(ev, [this,
@@ -215,9 +234,13 @@ void GlWindow::keyPressEvent(QKeyEvent *event)
 {
 	// Window management shortcuts on the big screen; anything else
 	// (power, volume, ...) still falls through to the handlers below.
-	if (m_output && m_output != m_cwlcompositor->defaultOutput() &&
-	    m_cwlcompositor->handleExternalKeyShortcut(event))
-		return;
+	if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
+		if (m_cwlcompositor->handleExternalKeyShortcut(event))
+			return;
+		// Regular typing from the big screen goes to the focused
+		// client; system keys are filtered out and handled below.
+		m_cwlcompositor->forwardKeyEvent(event);
+	}
 
 	if (event->key() == Qt::Key_PowerOff)
 		m_cwlcompositor->specialKey(
@@ -234,6 +257,12 @@ void GlWindow::keyPressEvent(QKeyEvent *event)
 
 void GlWindow::keyReleaseEvent(QKeyEvent *event)
 {
+	// Key releases from the big screen must reach the focused client as
+	// well, or clients are left with stuck keys. forwardKeyEvent()
+	// filters out the system keys handled below.
+	if (m_output && m_output != m_cwlcompositor->defaultOutput())
+		m_cwlcompositor->forwardKeyEvent(event);
+
 	if (event->key() == Qt::Key_PowerOff)
 		m_cwlcompositor->specialKey(
 			CutieShell::SpecialKey::POWER_RELEASE);
@@ -245,4 +274,59 @@ void GlWindow::keyReleaseEvent(QKeyEvent *event)
 	if (event->key() == Qt::Key_VolumeDown)
 		m_cwlcompositor->specialKey(
 			CutieShell::SpecialKey::VOLUME_DOWN_RELEASE);
+}
+
+void GlWindow::wheelEvent(QWheelEvent *ev)
+{
+	// Scroll events only arrive from the big screen; the phone UI
+	// handles scrolling through touch events inside the clients.
+	if (!m_output || m_output == m_cwlcompositor->defaultOutput())
+		return;
+	m_cursorVisible = true;
+	m_cwlcompositor->handleMouseWheelEvent(ev, m_output);
+}
+
+void GlWindow::renderCursor()
+{
+	// The hwcomposer hardware cursor only covers the built-in screen,
+	// so external outputs get a software cursor composited on top of
+	// the views.
+	QWaylandOutput *primaryOutput = m_cwlcompositor->defaultOutput();
+	if (!m_output || !m_cursorVisible || m_output == primaryOutput)
+		return;
+
+	if (!m_cursorTexture) {
+		QImage image(24, 24, QImage::Format_RGBA8888);
+		image.fill(Qt::transparent);
+		QPainter painter(&image);
+		painter.setRenderHint(QPainter::Antialiasing);
+		painter.setPen(QPen(Qt::black, 1));
+		painter.setBrush(Qt::white);
+		QPainterPath arrow;
+		arrow.moveTo(1.5, 1.5);
+		arrow.lineTo(1.5, 16.5);
+		arrow.lineTo(5.5, 12.5);
+		arrow.lineTo(8.5, 19.5);
+		arrow.lineTo(10.5, 18.5);
+		arrow.lineTo(7.5, 11.5);
+		arrow.lineTo(12.5, 11.5);
+		arrow.closeSubpath();
+		painter.drawPath(arrow);
+		painter.end();
+		m_cursorTexture = new QOpenGLTexture(image);
+	}
+
+	if (m_cursorTexture->target() != m_currentTarget) {
+		m_currentTarget = m_cursorTexture->target();
+		m_textureBlitter.bind(m_currentTarget);
+	}
+
+	const int outputScale = qMax(1, m_output->scaleFactor());
+	const QRectF targetRect(m_cursorPosition * outputScale,
+				QSizeF(24, 24) * outputScale);
+	m_textureBlitter.setOpacity(1.0);
+	m_textureBlitter.blit(m_cursorTexture->textureId(),
+			      QOpenGLTextureBlitter::targetTransform(
+				      targetRect, QRect(QPoint(), size())),
+			      QOpenGLTextureBlitter::OriginTopLeft);
 }

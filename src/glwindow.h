@@ -35,16 +35,24 @@ class GlWindow : public QOpenGLWindow {
 	void mouseMoveEvent(QMouseEvent *ev) override;
 	void mousePressEvent(QMouseEvent *ev) override;
 	void mouseReleaseEvent(QMouseEvent *ev) override;
+	void wheelEvent(QWheelEvent *ev) override;
 	void keyPressEvent(QKeyEvent *event) override;
 	void keyReleaseEvent(QKeyEvent *event) override;
 
     private:
 	void renderView(CwlView *view);
+	void renderCursor();
 
 	QOpenGLTextureBlitter m_textureBlitter;
 	QWaylandOutput *m_output = nullptr;
 	GLenum m_currentTarget;
 	QOpenGLTexture *m_wallpaper = nullptr;
+
+	// Software cursor for external outputs: the hardware cursor only
+	// covers the built-in screen.
+	QOpenGLTexture *m_cursorTexture = nullptr;
+	QPointF m_cursorPosition;
+	bool m_cursorVisible = false;
 
 	QList<QEventPoint *> m_evPoint;
 	bool m_displayOff = false;
