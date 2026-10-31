@@ -58,6 +58,14 @@ QList<CwlView *> CwlWorkspace::getToplevelViews()
 	return m_viewLayerList[CwlViewLayer::TOP];
 }
 
+QList<CwlView *> CwlWorkspace::getAllViews() const
+{
+	QList<CwlView *> views;
+	for (int layer = 0; layer < CwlViewLayer::NUM_LAYERS; ++layer)
+		views << m_viewLayerList[layer];
+	return views;
+}
+
 void CwlWorkspace::hideAllTopLevel()
 {
 	for (CwlView *view : m_viewLayerList[CwlViewLayer::TOP])
@@ -97,9 +105,6 @@ void CwlWorkspace::updateAvailableGeometry()
 	QRect geometry = m_outputGeometry;
 
 	QList<LayerSurfaceV1 *> lsList = getLayerSurfaces();
-	if (lsList.empty())
-		return;
-
 	for (LayerSurfaceV1 *surface : lsList) {
 		if (surface && surface->initialized) {
 			if (surface->ls_anchor == 1 ||
@@ -142,7 +147,8 @@ QList<LayerSurfaceV1 *> CwlWorkspace::getLayerSurfaces()
 {
 	QList<LayerSurfaceV1 *> ret;
 	for (CwlView *view : m_viewList)
-		if (view->getLayerSurface())
+		if (view->getLayerSurface() &&
+		    view->output() == m_compositor->defaultOutput())
 			ret << view->getLayerSurface();
 	return ret;
 }

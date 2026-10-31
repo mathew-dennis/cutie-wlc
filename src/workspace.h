@@ -15,6 +15,7 @@ class CwlWorkspace : public QObject {
 	void raiseView(CwlView *view);
 	QList<CwlView *> getViews();
 	QList<CwlView *> getToplevelViews();
+	QList<CwlView *> getAllViews() const;
 
 	void hideAllTopLevel();
 	void showDesktop(bool show);

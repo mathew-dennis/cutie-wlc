@@ -5,6 +5,7 @@
 
 #include <QtWaylandCompositor/QWaylandCompositorExtensionTemplate>
 #include <QtWaylandCompositor/QWaylandCompositor>
+#include <QtWaylandCompositor/QWaylandOutput>
 #include <QtWaylandCompositor/QWaylandSurface>
 #include <QPropertyAnimation>
 
@@ -24,8 +25,6 @@ class LayerShellV1 : public QWaylandCompositorExtensionTemplate<LayerShellV1>,
 
     signals:
 	void layerShellSurfaceCreated(LayerSurfaceV1 *layerSurface);
-
-	void layerShellSurfaceTopCreated(struct ::wl_resource *surface);
 
     public Q_SLOTS:
 
@@ -48,6 +47,7 @@ class LayerSurfaceV1
     public:
 	LayerSurfaceV1(struct ::wl_client *client, uint32_t id, int version);
 	QWaylandSurface *surface = nullptr;
+	QWaylandOutput *output = nullptr;
 
 	QMargins margins;
 	QSize size;

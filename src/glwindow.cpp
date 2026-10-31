@@ -25,6 +25,17 @@ void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
 	m_gesture = new CwlGesture(cwlcompositor, QSize(width(), height()));
 }
 
+void GlWindow::setOutput(QWaylandOutput *output)
+{
+	m_output = output;
+	requestUpdate();
+}
+
+QWaylandOutput *GlWindow::output() const
+{
+	return m_output;
+}
+
 bool GlWindow::displayOff()
 {
 	return m_displayOff;
@@ -57,9 +68,10 @@ void GlWindow::initializeGL()
 
 void GlWindow::paintGL()
 {
-	if (m_displayOff)
+	if (m_displayOff || !m_output)
 		return;
-	m_cwlcompositor->startRender();
+	m_cwlcompositor->startRender(m_output);
+	const bool primaryOutput = m_output == m_cwlcompositor->defaultOutput();
 
 	QOpenGLFunctions *functions = context()->functions();
 	functions->glClearColor(.0f, .0f, .0f, 1.f);
@@ -70,19 +82,20 @@ void GlWindow::paintGL()
 	functions->glEnable(GL_BLEND);
 	functions->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	QList<CwlView *> renderViews;
-	if (m_cwlcompositor->m_launcherView)
-		renderViews = m_cwlcompositor->getViews()
-			      << m_cwlcompositor->m_launcherView;
-	else
-		renderViews = m_cwlcompositor->getViews();
+	QList<CwlView *> renderViews = m_cwlcompositor->getViews();
+	if (primaryOutput && m_cwlcompositor->m_launcherView)
+		renderViews << m_cwlcompositor->m_launcherView;
 
 	for (CwlView *view : renderViews) {
+		if (!view || view->output() != m_output)
+			continue;
 		QString appId;
-		if (view && view->isToplevel())
+		if (view->isToplevel())
 			appId = view->getAppId();
 
-		if (appId == "cutie-launcher")
+		if (!primaryOutput)
+			m_textureBlitter.setOpacity(1.0);
+		else if (appId == "cutie-launcher")
 			m_textureBlitter.setOpacity(
 				1.0 -
 				(m_cwlcompositor->m_launcherView->getPosition()
@@ -103,7 +116,7 @@ void GlWindow::paintGL()
 		else
 			m_textureBlitter.setOpacity(1.0);
 
-		if (m_cwlcompositor->launcherPosition() == 1.0 &&
+		if (primaryOutput && m_cwlcompositor->launcherPosition() == 1.0 &&
 		    view->layer == CwlViewLayer::TOP)
 			continue;
 
@@ -111,7 +124,7 @@ void GlWindow::paintGL()
 	}
 
 	m_textureBlitter.release();
-	m_cwlcompositor->endRender();
+	m_cwlcompositor->endRender(m_output);
 }
 
 void GlWindow::renderView(CwlView *view)
@@ -127,10 +140,10 @@ void GlWindow::renderView(CwlView *view)
 	QWaylandSurface *surface = view->surface();
 	if (surface && surface->hasContent()) {
 		QSize viewSize = view->size();
-		QPointF viewPosition = view->getPosition();
+		QPointF viewPosition = view->getPosition() - m_output->position();
 		auto surfaceOrigin = view->textureOrigin();
-		QRectF targetRect(viewPosition * m_cwlcompositor->scaleFactor(),
-				  viewSize * m_cwlcompositor->scaleFactor());
+		const int outputScale = qMax(1, m_output->scaleFactor());
+		QRectF targetRect(viewPosition * outputScale, viewSize * outputScale);
 
 		QMatrix4x4 targetTransform =
 			QOpenGLTextureBlitter::targetTransform(
@@ -147,33 +160,49 @@ void GlWindow::renderView(CwlView *view)
 
 void GlWindow::touchEvent(QTouchEvent *ev)
 {
+	if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
+		m_cwlcompositor->handleTouchEvent(ev->points(), m_output);
+		return;
+	}
 	m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
-		m_cwlcompositor->handleTouchEvent(points);
+		m_cwlcompositor->handleTouchEvent(points, m_output);
 	});
 }
 
 void GlWindow::mouseMoveEvent(QMouseEvent *ev)
 {
+	if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
+		m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
+		return;
+	}
 	m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
-		m_cwlcompositor->handleMouseMoveEvent(points);
+		m_cwlcompositor->handleMouseMoveEvent(points, m_output);
 	});
 }
 
 void GlWindow::mousePressEvent(QMouseEvent *ev)
 {
 	Qt::MouseButton btn = ev->button();
+	if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
+		m_cwlcompositor->handleMousePressEvent(ev->points(), btn, m_output);
+		return;
+	}
 	m_gesture->handlePointerEvent(ev, [this,
 					   btn](QList<QEventPoint> points) {
-		m_cwlcompositor->handleMousePressEvent(points, btn);
+		m_cwlcompositor->handleMousePressEvent(points, btn, m_output);
 	});
 }
 
 void GlWindow::mouseReleaseEvent(QMouseEvent *ev)
 {
 	Qt::MouseButton btn = ev->button();
+	if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
+		m_cwlcompositor->handleMouseReleaseEvent(ev->points(), btn, m_output);
+		return;
+	}
 	m_gesture->handlePointerEvent(ev, [this,
 					   btn](QList<QEventPoint> points) {
-		m_cwlcompositor->handleMouseReleaseEvent(points, btn);
+		m_cwlcompositor->handleMouseReleaseEvent(points, btn, m_output);
 	});
 }
 
