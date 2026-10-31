@@ -98,6 +98,98 @@ void CwlView::setHidden(bool hide)
 	m_hidden = hide;
 }
 
+CwlWindowMode CwlView::windowMode() const
+{
+	return m_windowMode;
+}
+
+bool CwlView::isMinimized() const
+{
+	return m_windowMode == CwlWindowMode::WindowMinimized;
+}
+
+QRectF CwlView::windowedGeometry() const
+{
+	if (!m_windowedGeometry.isEmpty())
+		return m_windowedGeometry;
+	// Default windowed placement: 80% of the output, centered.
+	const QSizeF windowedSize(m_availableGeometry.width() * 0.8,
+				  m_availableGeometry.height() * 0.8);
+	return QRectF(QPointF(m_availableGeometry.center()) -
+		      QPointF(windowedSize.width() / 2,
+			      windowedSize.height() / 2),
+		      windowedSize);
+}
+
+void CwlView::applyWindowMode()
+{
+	if (!m_isTopLevel || !m_toplevel)
+		return;
+
+	switch (m_windowMode) {
+	case CwlWindowMode::WindowMaximized:
+		m_toplevel->sendMaximized(m_availableGeometry.size());
+		setPosition(m_availableGeometry.topLeft());
+		break;
+	case CwlWindowMode::WindowNormal: {
+		const QRectF geometry = windowedGeometry();
+		m_toplevel->sendUnmaximized(geometry.size().toSize());
+		setPosition(geometry.topLeft());
+		break;
+	}
+	case CwlWindowMode::WindowMinimized:
+		// Nothing to configure; the view is skipped while rendering
+		// and while hit-testing until it is restored.
+		break;
+	}
+	m_cwlcompositor->triggerRender();
+}
+
+void CwlView::requestMaximize()
+{
+	if (m_windowMode == CwlWindowMode::WindowMinimized) {
+		// Maximize on restore.
+		m_modeBeforeMinimize = CwlWindowMode::WindowMaximized;
+		return;
+	}
+	if (m_windowMode == CwlWindowMode::WindowNormal)
+		m_windowedGeometry = QRectF(m_position, QSizeF(size()));
+	m_windowMode = CwlWindowMode::WindowMaximized;
+	applyWindowMode();
+}
+
+void CwlView::requestWindowed(const QRectF &geometry)
+{
+	if (!geometry.isNull() && !geometry.isEmpty())
+		m_windowedGeometry = geometry;
+	if (m_windowMode == CwlWindowMode::WindowMinimized) {
+		// Go windowed on restore.
+		m_modeBeforeMinimize = CwlWindowMode::WindowNormal;
+		return;
+	}
+	m_windowMode = CwlWindowMode::WindowNormal;
+	applyWindowMode();
+}
+
+void CwlView::requestMinimize()
+{
+	if (m_windowMode == CwlWindowMode::WindowMinimized)
+		return;
+	m_modeBeforeMinimize = m_windowMode;
+	if (m_windowMode == CwlWindowMode::WindowNormal)
+		m_windowedGeometry = QRectF(m_position, QSizeF(size()));
+	m_windowMode = CwlWindowMode::WindowMinimized;
+	m_cwlcompositor->triggerRender();
+}
+
+void CwlView::requestRestore()
+{
+	if (m_windowMode != CwlWindowMode::WindowMinimized)
+		return;
+	m_windowMode = m_modeBeforeMinimize;
+	applyWindowMode();
+}
+
 void CwlView::onAvailableGeometryChanged(QRect geometry)
 {
 	if (output() != m_cwlcompositor->defaultOutput())
@@ -148,6 +240,22 @@ void CwlView::setTopLevel(QWaylandXdgToplevel *toplevel)
 	m_isTopLevel = true;
 	connect(m_toplevel, &QWaylandXdgToplevel::appIdChanged, this,
 		&CwlView::onAppIdChanged);
+	// Client-driven maximize/unmaximize (xdg_toplevel set_maximized /
+	// set_unmaximized requests) on external outputs only; the primary
+	// screen stays always-maximized.
+	connect(m_toplevel, &QWaylandXdgToplevel::maximizedChanged, this,
+		[this]() {
+			if (!output() || !m_cwlcompositor ||
+			    output() == m_cwlcompositor->defaultOutput() ||
+			    m_windowMode == CwlWindowMode::WindowMinimized)
+				return;
+			if (m_toplevel->maximized() &&
+			    m_windowMode == CwlWindowMode::WindowNormal)
+				requestMaximize();
+			else if (!m_toplevel->maximized() &&
+				 m_windowMode == CwlWindowMode::WindowMaximized)
+				requestWindowed(QRectF());
+		});
 }
 
 void CwlView::setDesktopOutput(QWaylandOutput *output, const QRect &geometry)
@@ -157,6 +265,10 @@ void CwlView::setDesktopOutput(QWaylandOutput *output, const QRect &geometry)
 	QWaylandView::setOutput(output);
 	m_availableGeometry = geometry;
 	if (m_isTopLevel && m_toplevel) {
+		// Landing on an output always configures the window as
+		// maximized first (matching the mobile shell behavior); the
+		// user or the client can then unmaximize into windowed mode.
+		m_windowMode = CwlWindowMode::WindowMaximized;
 		m_toplevel->sendMaximized(geometry.size());
 		setPosition(geometry.topLeft());
 	}

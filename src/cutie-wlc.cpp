@@ -13,6 +13,7 @@
 #include <QWaylandPointer>
 #include <QWaylandTouch>
 #include <QTouchEvent>
+#include <QKeyEvent>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
@@ -176,8 +177,10 @@ QWaylandOutput *CwlCompositor::outputForToplevel(CwlView *view)
 		if (parent && parent->output())
 			return parent->output();
 	}
-	return m_externalOutputs.isEmpty() ? m_output :
-					      m_externalOutputs.constBegin().value();
+	// Route new windows to the output the user is currently interacting
+	// with instead of always hijacking them to the first external
+	// display. The built-in screen stays the default.
+	return m_focusedOutput ? m_focusedOutput : m_output;
 }
 
 QRect CwlCompositor::outputGeometry(QWaylandOutput *output) const
@@ -199,14 +202,23 @@ void CwlCompositor::onScreenAdded(QScreen *screen)
 	window->resize(screen->size());
 	window->setCompositor(this);
 	m_externalWindows.insert(screen, window);
+	// Use guarded pointers: the screen or window may already be gone
+	// by the time glReady is emitted (hotplug race).
 	connect(window, &GlWindow::glReady, this,
-		[this, screen, window]() { createExternalOutput(screen, window); });
+		[this, screen = QPointer<QScreen>(screen),
+		 window = QPointer<GlWindow>(window)]() {
+			if (screen && window)
+				createExternalOutput(screen, window);
+		});
 	window->show();
 }
 
 void CwlCompositor::createExternalOutput(QScreen *screen, GlWindow *window)
 {
 	if (!m_created || !screen || !window || m_externalOutputs.contains(screen))
+		return;
+	// Ignore stale signals from a window that has since been removed.
+	if (m_externalWindows.value(screen) != window)
 		return;
 
 	const qreal refreshRate = screen->refreshRate() > 0
@@ -216,7 +228,10 @@ void CwlCompositor::createExternalOutput(QScreen *screen, GlWindow *window)
 	output->addMode(mode, true);
 	output->setCurrentMode(mode);
 	output->setScaleFactor(1);
-	output->setPosition(screen->geometry().topLeft() / qMax(1, m_scaleFactor));
+	// QScreen geometries from the QPA plugin are in physical pixels
+	// already; mixing in the primary screen's Wayland scale factor
+	// corrupts the global layout when m_scaleFactor > 1.
+	output->setPosition(screen->geometry().topLeft());
 	output->setPhysicalSize(screen->physicalSize().toSize());
 	output->setModel(screen->name());
 	m_externalOutputs.insert(screen, output);
@@ -248,7 +263,13 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 	if (window)
 		window->setOutput(nullptr);
 	delete output;
-	delete window;
+	// deleteLater() instead of delete: a paint pass may already be
+	// scheduled for this window when the screen disappears.
+	window->deleteLater();
+	// The focused output is gone; fall back to the built-in screen so
+	// outputForToplevel() never hands out a deleted QWaylandOutput.
+	if (m_focusedOutput == output)
+		m_focusedOutput = m_output;
 	triggerRender();
 }
 
@@ -274,8 +295,15 @@ void CwlCompositor::routeExistingViews(QWaylandOutput *from,
 			}
 			view->setOutput(to);
 			view->setPosition(view->getPosition() + positionDelta);
-			if (view->isToplevel() && view->getTopLevel())
-				view->getTopLevel()->sendMaximized(targetGeometry.size());
+			if (view->isToplevel() && view->getTopLevel()) {
+				// Keep the window mode the view had: only
+				// re-send a maximized configure to views that
+				// actually were maximized.
+				if (view->windowMode() == CwlWindowMode::WindowMaximized)
+					view->getTopLevel()->sendMaximized(targetGeometry.size());
+				else
+					view->getTopLevel()->sendUnmaximized(view->size());
+			}
 		}
 	}
 }
@@ -291,6 +319,9 @@ CwlView *CwlCompositor::viewAt(const QPoint &position, QWaylandOutput *output)
 	for (auto it = getViews().crbegin(); it != getViews().crend(); ++it) {
 		CwlView *view = *it;
 		if (view->output() != output)
+			continue;
+		// Minimized windows are hidden and not hit-testable.
+		if (view->isMinimized())
 			continue;
 		QRectF geom(view->getPosition(), view->size());
 		if (!geom.contains(checkPoint))
@@ -466,6 +497,12 @@ void CwlCompositor::raise(CwlView *view)
 	if (view->isHidden())
 		view->setHidden(false);
 
+	// Remember where the user's attention is so new windows open on the
+	// same output (the "big screen" keeps its windows, the phone screen
+	// keeps its apps).
+	if (view->output())
+		m_focusedOutput = view->output();
+
 	defaultSeat()->setKeyboardFocus(view->surface());
 
 	if (view == m_homeView) {
@@ -536,6 +573,97 @@ void CwlCompositor::handleMouseReleaseEvent(QList<QEventPoint> points,
 {
 	handleMouseMoveEvent(points, output);
 	defaultSeat()->sendMouseReleaseEvent(btn);
+}
+
+void CwlCompositor::maximizeView(CwlView *view)
+{
+	if (!view || !view->isToplevel())
+		return;
+	view->requestMaximize();
+}
+
+void CwlCompositor::windowedView(CwlView *view, const QRectF &geometry)
+{
+	if (!view || !view->isToplevel())
+		return;
+	view->requestWindowed(geometry);
+}
+
+void CwlCompositor::minimizeView(CwlView *view)
+{
+	if (!view || !view->isToplevel() || view->isMinimized())
+		return;
+	// The primary screen keeps its mobile always-maximized behavior;
+	// windowing only applies to external displays.
+	if (!view->output() || view->output() == m_output)
+		return;
+	view->requestMinimize();
+	m_minimizedViews.removeAll(view);
+	m_minimizedViews.append(view);
+	triggerRender();
+}
+
+void CwlCompositor::restoreView(CwlView *view)
+{
+	if (!view || !view->isMinimized())
+		return;
+	m_minimizedViews.removeAll(view);
+	view->requestRestore();
+	raise(view);
+}
+
+bool CwlCompositor::handleExternalKeyShortcut(QKeyEvent *event)
+{
+	if (!event || !m_created)
+		return false;
+
+	// Find the toplevel view that currently owns the keyboard.
+	QWaylandSurface *focusSurface = defaultSeat()->keyboardFocus();
+	CwlView *focused = nullptr;
+	for (CwlView *view : getViews()) {
+		if (view->surface() == focusSurface && view->isToplevel()) {
+			focused = view;
+			break;
+		}
+	}
+
+	switch (event->key()) {
+	case Qt::Key_F11:
+		// Toggle between maximized and windowed on the big screen.
+		if (focused && focused->isMinimized()) {
+			restoreView(focused);
+			return true;
+		}
+		if (focused &&
+		    focused->windowMode() == CwlWindowMode::WindowMaximized) {
+			windowedView(focused, focused->windowedGeometry());
+			return true;
+		}
+		if (focused) {
+			maximizeView(focused);
+			return true;
+		}
+		return false;
+	case Qt::Key_M:
+		if (event->modifiers() & Qt::ControlModifier) {
+			minimizeView(focused);
+			return focused != nullptr;
+		}
+		return false;
+	case Qt::Key_R:
+		// Restore the most recently minimized window.
+		if (event->modifiers() & Qt::ControlModifier) {
+			for (int i = m_minimizedViews.size() - 1; i >= 0; --i) {
+				if (m_minimizedViews.at(i)) {
+					restoreView(m_minimizedViews.at(i).data());
+					return true;
+				}
+			}
+		}
+		return false;
+	default:
+		return false;
+	}
 }
 
 bool CwlCompositor::handleGesture(QPointerEvent *ev, int edge, int corner)

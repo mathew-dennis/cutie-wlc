@@ -42,6 +42,14 @@ enum CwlViewAnchor : uint32_t {
 	ANCHOR_RIGHT = 8
 };
 
+// Window mode for toplevels on external outputs ("the big screen").
+// The primary screen keeps its mobile always-maximized behavior.
+enum CwlWindowMode : uint32_t {
+	WindowNormal = 0,
+	WindowMaximized,
+	WindowMinimized
+};
+
 class CwlView : public QWaylandView {
 	Q_OBJECT
     public:
@@ -62,6 +70,14 @@ class CwlView : public QWaylandView {
 	LayerSurfaceV1 *getLayerSurface();
 	bool isHidden();
 	void setHidden(bool hide);
+
+	CwlWindowMode windowMode() const;
+	bool isMinimized() const;
+	QRectF windowedGeometry() const;
+	void requestMaximize();
+	void requestWindowed(const QRectF &geometry);
+	void requestMinimize();
+	void requestRestore();
 
 	QWaylandXdgToplevel *getTopLevel();
 	QWaylandXdgPopup *getPopup();
@@ -110,6 +126,10 @@ class CwlView : public QWaylandView {
 	bool m_isImageBuffer = false;
 	QString m_cwlAppId = "";
 	QWaylandSurfaceGrabber *m_grabber = nullptr;
+	CwlWindowMode m_windowMode = CwlWindowMode::WindowMaximized;
+	CwlWindowMode m_modeBeforeMinimize = CwlWindowMode::WindowMaximized;
+	QRectF m_windowedGeometry;
+	void applyWindowMode();
 
     public slots:
 	void onAvailableGeometryChanged(QRect geometry);

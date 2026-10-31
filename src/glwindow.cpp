@@ -89,6 +89,9 @@ void GlWindow::paintGL()
 	for (CwlView *view : renderViews) {
 		if (!view || view->output() != m_output)
 			continue;
+		// Minimized windows are not rendered.
+		if (view->isMinimized())
+			continue;
 		QString appId;
 		if (view->isToplevel())
 			appId = view->getAppId();
@@ -129,6 +132,8 @@ void GlWindow::paintGL()
 
 void GlWindow::renderView(CwlView *view)
 {
+	if (view->isMinimized())
+		return;
 	QOpenGLTexture *texture = view->getTexture();
 	if (!texture)
 		return;
@@ -208,6 +213,12 @@ void GlWindow::mouseReleaseEvent(QMouseEvent *ev)
 
 void GlWindow::keyPressEvent(QKeyEvent *event)
 {
+	// Window management shortcuts on the big screen; anything else
+	// (power, volume, ...) still falls through to the handlers below.
+	if (m_output && m_output != m_cwlcompositor->defaultOutput() &&
+	    m_cwlcompositor->handleExternalKeyShortcut(event))
+		return;
+
 	if (event->key() == Qt::Key_PowerOff)
 		m_cwlcompositor->specialKey(
 			CutieShell::SpecialKey::POWER_PRESS);

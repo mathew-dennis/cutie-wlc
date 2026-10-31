@@ -7,6 +7,7 @@
 #include <cutie-shell.h>
 #include <QEventPoint>
 #include <QHash>
+#include <QPointer>
 #include <QProcess>
 #include <QPropertyAnimation>
 #include <QWaylandXdgDecorationManagerV1>
@@ -14,6 +15,7 @@
 QT_BEGIN_NAMESPACE
 
 class QScreen;
+class QKeyEvent;
 class GlWindow;
 class CwlWorkspace;
 class CutieShell;
@@ -53,6 +55,13 @@ class CwlCompositor : public QWaylandCompositor {
 				     QWaylandOutput *output = nullptr);
 	QWaylandOutput *outputForToplevel(CwlView *view);
 	QRect outputGeometry(QWaylandOutput *output) const;
+
+	// Window management on external outputs ("the big screen").
+	void maximizeView(CwlView *view);
+	void windowedView(CwlView *view, const QRectF &geometry);
+	void minimizeView(CwlView *view);
+	void restoreView(CwlView *view);
+	bool handleExternalKeyShortcut(QKeyEvent *event);
 
 	bool handleGesture(QPointerEvent *ev, int edge, int corner);
 
@@ -124,6 +133,8 @@ class CwlCompositor : public QWaylandCompositor {
 	QWaylandOutput *m_output = nullptr;
 	QHash<QScreen *, GlWindow *> m_externalWindows;
 	QHash<QScreen *, QWaylandOutput *> m_externalOutputs;
+	QWaylandOutput *m_focusedOutput = nullptr;
+	QList<QPointer<CwlView>> m_minimizedViews;
 	QWaylandXdgDecorationManagerV1 *m_xdgdecoration = nullptr;
 	InputMethodManagerV2 *m_inputMngr = nullptr;
 	CwlView *m_homeView = nullptr;
