@@ -100,6 +100,13 @@ void CwlView::setHidden(bool hide)
 
 void CwlView::onAvailableGeometryChanged(QRect geometry)
 {
+	if (output() != m_cwlcompositor->defaultOutput())
+		return;
+	applyAvailableGeometry(geometry);
+}
+
+void CwlView::applyAvailableGeometry(const QRect &geometry)
+{
 	m_availableGeometry = geometry;
 	if (layer == TOP) {
 		if (isToplevel()) {
@@ -148,6 +155,18 @@ void CwlView::setTopLevel(QWaylandXdgToplevel *toplevel)
 		&CwlView::onAppIdChanged);
 }
 
+void CwlView::setDesktopOutput(QWaylandOutput *output, const QRect &geometry)
+{
+	if (!output)
+		return;
+	QWaylandView::setOutput(output);
+	m_availableGeometry = geometry;
+	if (m_isTopLevel && m_toplevel) {
+		m_toplevel->sendMaximized(geometry.size());
+		setPosition(geometry.topLeft());
+	}
+}
+
 void CwlView::setPopUp(QWaylandXdgPopup *popup)
 {
 	m_xdgPopup = popup;
@@ -192,6 +211,12 @@ void CwlView::onAppIdChanged()
 	if (m_toplevel->appId() == getAppId())
 		return;
 	setAppId();
+	QWaylandOutput *targetOutput = m_cwlcompositor->outputForToplevel(this);
+	if (targetOutput != output()) {
+		setOutput(targetOutput);
+		m_availableGeometry =
+			m_cwlcompositor->outputGeometry(targetOutput);
+	}
 	if (getAppId() == "cutie-launcher") {
 		layer = OVERLAY;
 		m_cwlcompositor->m_launcherView = this;
@@ -251,6 +276,10 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 {
 	if (surface != m_layerSurface)
 		return;
+	const bool isPrimary = output() == m_cwlcompositor->defaultOutput();
+	const QRect screenGeometry = isPrimary
+		? m_cwlcompositor->m_workspace->outputGeometry()
+		: m_cwlcompositor->outputFullGeometry(output());
 	if (m_layerSurface->ls_scope == "cutie-panel" &&
 	    m_layerSurface->size.height() <= m_layerSurface->ls_zone)
 		panelState = PANEL_FOLDED;
@@ -263,39 +292,31 @@ void CwlView::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 	if (CwlViewAnchor::ANCHOR_TOP & m_layerSurface->ls_anchor &&
 	    !(CwlViewAnchor::ANCHOR_BOTTOM & m_layerSurface->ls_anchor))
 		position.setY(m_layerSurface->ls_zone < 0 ?
-				      0 :
+				      screenGeometry.top() :
 				      m_availableGeometry.top());
 	else if (CwlViewAnchor::ANCHOR_BOTTOM & m_layerSurface->ls_anchor &&
 		 !(CwlViewAnchor::ANCHOR_TOP & m_layerSurface->ls_anchor))
 		position.setY(
-			(m_layerSurface->ls_zone < 0 ?
-				 m_cwlcompositor->m_workspace->outputGeometry()
-					 .bottom() :
+			(m_layerSurface->ls_zone < 0 ? screenGeometry.bottom() :
 				 m_availableGeometry.bottom()) -
 			m_layerSurface->ls_zone);
 	else if (m_layerSurface->ls_zone < 0)
-		position.setY(m_cwlcompositor->m_workspace->outputGeometry()
-				      .center()
-				      .y() -
+		position.setY(screenGeometry.center().y() -
 			      m_layerSurface->size.height() / 2);
 
 	if (CwlViewAnchor::ANCHOR_LEFT & m_layerSurface->ls_anchor &&
 	    !(CwlViewAnchor::ANCHOR_RIGHT & m_layerSurface->ls_anchor))
 		position.setX(m_layerSurface->ls_zone < 0 ?
-				      0 :
+				      screenGeometry.left() :
 				      m_availableGeometry.left());
 	else if (CwlViewAnchor::ANCHOR_RIGHT & m_layerSurface->ls_anchor &&
 		 !(CwlViewAnchor::ANCHOR_LEFT & m_layerSurface->ls_anchor))
 		position.setX(
-			(m_layerSurface->ls_zone < 0 ?
-				 m_cwlcompositor->m_workspace->outputGeometry()
-					 .right() :
+			(m_layerSurface->ls_zone < 0 ? screenGeometry.right() :
 				 m_availableGeometry.right()) -
 			m_layerSurface->size.width());
 	else if (m_layerSurface->ls_zone < 0)
-		position.setX(m_cwlcompositor->m_workspace->outputGeometry()
-				      .center()
-				      .x() -
+		position.setX(screenGeometry.center().x() -
 			      m_layerSurface->size.width() / 2);
 
 	this->setPosition(position);

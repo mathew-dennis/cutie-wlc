@@ -19,6 +19,9 @@ void LayerShellV1::zwlr_layer_shell_v1_get_layer_surface(
 	LayerSurfaceV1 *obj =
 		new LayerSurfaceV1(resource->client(), id, resource->version());
 	obj->surface = QWaylandSurface::fromResource(surface);
+	obj->output = output ? QWaylandOutput::fromResource(output) : nullptr;
+	if (!obj->output)
+		obj->output = m_compositor->defaultOutput();
 	obj->ls_layer = layer;
 	obj->new_ls_layer = layer;
 	obj->ls_scope = scope;

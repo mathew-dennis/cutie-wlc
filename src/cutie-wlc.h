@@ -6,12 +6,15 @@
 #include <workspace.h>
 #include <cutie-shell.h>
 #include <QEventPoint>
+#include <QHash>
+#include <QTimer>
 #include <QProcess>
 #include <QPropertyAnimation>
 #include <QWaylandXdgDecorationManagerV1>
 
 QT_BEGIN_NAMESPACE
 
+class QScreen;
 class GlWindow;
 class CwlWorkspace;
 class CutieShell;
@@ -34,27 +37,41 @@ class CwlCompositor : public QWaylandCompositor {
 
 	QList<CwlView *> getViews() const;
 	QList<CwlView *> getToplevelViews();
-	CwlView *viewAt(const QPoint &position);
+	CwlView *viewAt(const QPoint &position, QWaylandOutput *output = nullptr);
 	CwlView *findView(QWaylandSurface *s);
 	CwlView *findTlView(QWaylandSurface *s);
 	CwlView *findTreeView(QWaylandSurface *s, CwlView *rootView);
 
 	void raise(CwlView *cwlview);
 
-	void handleTouchEvent(QList<QEventPoint> points);
-	void handleMouseMoveEvent(QList<QEventPoint> points);
-	void handleMousePressEvent(QList<QEventPoint> points,
-				   Qt::MouseButton btn);
-	void handleMouseReleaseEvent(QList<QEventPoint> points,
-				     Qt::MouseButton btn);
+	void handleTouchEvent(QList<QEventPoint> points,
+			      QWaylandOutput *output = nullptr);
+	void handleMouseMoveEvent(QList<QEventPoint> points,
+				  QWaylandOutput *output = nullptr);
+	void handleMousePressEvent(QList<QEventPoint> points, Qt::MouseButton btn,
+				   QWaylandOutput *output = nullptr);
+	void handleMouseReleaseEvent(QList<QEventPoint> points, Qt::MouseButton btn,
+				     QWaylandOutput *output = nullptr);
+	void handleMouseMoveEvent(const QPointF &position, QWaylandOutput *output);
+	void handleMousePressEvent(const QPointF &position, Qt::MouseButton btn,
+				   QWaylandOutput *output);
+	void handleMouseReleaseEvent(const QPointF &position, Qt::MouseButton btn,
+				     QWaylandOutput *output);
+	QWaylandOutput *outputAtGlobal(const QPointF &global, QPointF *local) const;
+	QWaylandOutput *outputForToplevel(CwlView *view);
+	QRect outputGeometry(QWaylandOutput *output) const;
+	QRect outputFullGeometry(QWaylandOutput *output) const;
+	QList<QWaylandOutput *> externalOutputs() const;
 
 	bool handleGesture(QPointerEvent *ev, int edge, int corner);
 
 	void handleKeyPress(quint32 nativeScanCode);
 	void handleKeyRelease(quint32 nativeScanCode);
 
-	void startRender();
-	void endRender();
+	void startRender(QWaylandOutput *output);
+	void endRender(QWaylandOutput *output);
+
+	void updateCursor(const QPointF &position, QWaylandOutput *output);
 
 	int scaleFactor();
 	void setScaleFactor(int scale);
@@ -65,6 +82,15 @@ class CwlCompositor : public QWaylandCompositor {
 
 	CwlView *m_launcherView = nullptr;
 	CwlWorkspace *m_workspace = nullptr;
+
+	// Compositor-drawn pointer. Position is in device pixels, local to
+	// m_cursorOutput; only the window of that output draws it.
+	CwlView *m_cursorView = nullptr;
+	QWaylandOutput *m_cursorOutput = nullptr;
+	QPointF m_cursorPos;
+	QPoint m_cursorHotspot;
+	bool m_cursorHidden = false;
+	bool m_mouseActive = false;
 
 	CwlView *getHomeView();
 
@@ -85,6 +111,8 @@ class CwlCompositor : public QWaylandCompositor {
 
     public slots:
 	void triggerRender();
+	void onScreenAdded(QScreen *screen);
+	void onScreenRemoved(QScreen *screen);
 	void onToplevelDamaged(CwlView *view);
 	void onHideKeyboard();
 
@@ -97,6 +125,8 @@ class CwlCompositor : public QWaylandCompositor {
 	void viewSurfaceDestroyed();
 	void initInputMethod();
 	void animationValueChanged(const QVariant &value);
+	void createExternalOutput(QScreen *screen, GlWindow *window);
+	void routeExistingViews(QWaylandOutput *from, QWaylandOutput *to);
 
     private:
 	CwlView *findView(const QWaylandSurface *s) const;
@@ -112,6 +142,8 @@ class CwlCompositor : public QWaylandCompositor {
 	ScreencopyManagerV1 *m_screencopyManager = nullptr;
 	ForeignToplevelManagerV1 *m_foreignTlManagerV1 = nullptr;
 	QWaylandOutput *m_output = nullptr;
+	QHash<QScreen *, GlWindow *> m_externalWindows;
+	QHash<QScreen *, QWaylandOutput *> m_externalOutputs;
 	QWaylandXdgDecorationManagerV1 *m_xdgdecoration = nullptr;
 	InputMethodManagerV2 *m_inputMngr = nullptr;
 	CwlView *m_homeView = nullptr;
@@ -128,6 +160,8 @@ class CwlCompositor : public QWaylandCompositor {
 		new QPropertyAnimation(this, "launcherPosition", this);
 
 	int m_scaleFactor = 1;
+	bool m_created = false;
+	QTimer *m_mouseInactivityTimer = nullptr;
 	double m_blur = 0.0;
 	double m_launcherPosition = 1.0;
 	bool m_homeOpen = true;
