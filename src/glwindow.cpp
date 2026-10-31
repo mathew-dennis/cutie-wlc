@@ -183,19 +183,19 @@ void GlWindow::touchEvent(QTouchEvent *ev)
 
 void GlWindow::mouseMoveEvent(QMouseEvent *ev)
 {
-	if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
-		// Track the pointer for the software cursor before routing
-		// the event to the client underneath.
-		m_cursorPosition =
-			ev->position() / qMax(1, m_output->scaleFactor());
-		m_cursorVisible = true;
-		m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
-		requestUpdate();
-		return;
-	}
-	m_gesture->handlePointerEvent(ev, [this](QList<QEventPoint> points) {
-		m_cwlcompositor->handleMouseMoveEvent(points, m_output);
-	});
+    if (m_output && m_output != m_cwlcompositor->defaultOutput()) {
+        // Track the pointer for the software cursor before routing
+        // the event to the client underneath.
+        m_cursorPosition =
+            ev->position() / qMax(1, m_output->scaleFactor());
+        m_cursorVisible = true;
+        m_cwlcompositor->handleMouseMoveEvent(ev->points(), m_output);
+        requestUpdate();
+        return;
+    }
+    m_gesture->handlePointerEvent(ev, this {
+        m_cwlcompositor->handleMouseMoveEvent(points, m_output);
+    });
 }
 
 void GlWindow::mousePressEvent(QMouseEvent *ev)
@@ -288,32 +288,32 @@ void GlWindow::wheelEvent(QWheelEvent *ev)
 
 void GlWindow::renderCursor()
 {
-	// The hwcomposer hardware cursor only covers the built-in screen,
-	// so external outputs get a software cursor composited on top of
-	// the views.
-	QWaylandOutput *primaryOutput = m_cwlcompositor->defaultOutput();
-	if (!m_output || !m_cursorVisible || m_output == primaryOutput)
-		return;
+    // The hwcomposer hardware cursor only covers the built-in screen,
+    // so external outputs get a software cursor composited on top of
+    // the views.
+    QWaylandOutput *primaryOutput = m_cwlcompositor->defaultOutput();
+    if (!m_output || !m_cursorVisible || m_output == primaryOutput)
+        return;
 
-	if (!m_cursorTexture) {
-		QImage image(24, 24, QImage::Format_RGBA8888);
-		image.fill(Qt::transparent);
-		QPainter painter(&image);
-		painter.setRenderHint(QPainter::Antialiasing);
-		painter.setPen(QPen(Qt::black, 1));
-		painter.setBrush(Qt::white);
-		QPainterPath arrow;
-		arrow.moveTo(1.5, 1.5);
-		arrow.lineTo(1.5, 16.5);
-		arrow.lineTo(5.5, 12.5);
-		arrow.lineTo(8.5, 19.5);
-		arrow.lineTo(10.5, 18.5);
-		arrow.lineTo(7.5, 11.5);
-		arrow.lineTo(12.5, 11.5);
-		arrow.closeSubpath();
-		painter.drawPath(arrow);
-		painter.end();
-		m_cursorTexture = new QOpenGLTexture(image);
+    if (!m_cursorTexture) {
+        QImage image(24, 24, QImage::Format_RGBA8888);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(Qt::black, 1));
+        painter.setBrush(Qt::white);
+        QPainterPath arrow;
+        arrow.moveTo(1.5, 1.5);
+        arrow.lineTo(1.5, 16.5);
+        arrow.lineTo(5.5, 12.5);
+        arrow.lineTo(8.5, 19.5);
+        arrow.lineTo(10.5, 18.5);
+        arrow.lineTo(7.5, 11.5);
+        arrow.lineTo(12.5, 11.5);
+        arrow.closeSubpath();
+        painter.drawPath(arrow);
+        painter.end();
+        m_cursorTexture = new QOpenGLTexture(image);
 	}
 
 	if (m_cursorTexture->target() != m_currentTarget) {
