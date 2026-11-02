@@ -8,16 +8,14 @@ set(CWL_SOURCES
 		cutie-wlc.cpp
 		workspace.cpp
 		glwindow.cpp
-		gesture.cpp
-		rawpointer.cpp)
+		gesture.cpp)
 
 set(CWL_HEADERS
 		view.h
 		cutie-wlc.h
 		workspace.h
 		glwindow.h
-		gesture.h
-		rawpointer.h)
+		gesture.h)
 
 set(QML_RESOURCES)
 
