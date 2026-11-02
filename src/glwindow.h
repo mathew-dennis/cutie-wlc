@@ -14,6 +14,8 @@ class GlWindow : public QOpenGLWindow {
     public:
 	GlWindow();
 	void setCompositor(CwlCompositor *cwlcompositor);
+	void setOutput(QWaylandOutput *output);
+	QWaylandOutput *output() const;
 	bool displayOff();
 	void setDisplayOff(bool displayOff);
 	inline CwlGesture *gesture()
@@ -38,10 +40,17 @@ class GlWindow : public QOpenGLWindow {
 
     private:
 	void renderView(CwlView *view);
+	void renderCursor();
+	bool ownsPointer(QWaylandOutput *output) const;
+	QWaylandOutput *pointerTarget(const QMouseEvent *ev, QPointF *local) const;
+	void trackCursor(const QMouseEvent *ev, const QPointF &local,
+			 QWaylandOutput *output);
 
 	QOpenGLTextureBlitter m_textureBlitter;
+	QWaylandOutput *m_output = nullptr;
 	GLenum m_currentTarget;
 	QOpenGLTexture *m_wallpaper = nullptr;
+	QOpenGLTexture *m_fallbackCursor = nullptr;
 
 	QList<QEventPoint *> m_evPoint;
 	bool m_displayOff = false;
