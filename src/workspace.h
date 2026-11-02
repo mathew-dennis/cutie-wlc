@@ -8,6 +8,7 @@ class CwlWorkspace : public QObject {
 	CwlWorkspace(CwlCompositor *compositor);
 
 	QRect availableGeometry();
+	QRect availableGeometry(QWaylandOutput *output);
 	QRect outputGeometry();
 
 	void removeView(CwlView *view);
@@ -15,6 +16,7 @@ class CwlWorkspace : public QObject {
 	void raiseView(CwlView *view);
 	QList<CwlView *> getViews();
 	QList<CwlView *> getToplevelViews();
+	QList<CwlView *> getAllViews() const;
 
 	void hideAllTopLevel();
 	void showDesktop(bool show);
@@ -38,8 +40,10 @@ class CwlWorkspace : public QObject {
 	QList<CwlView *> m_viewList;
 	QList<CwlView *> m_viewLayerList[CwlViewLayer::NUM_LAYERS];
 
-	QList<LayerSurfaceV1 *> getLayerSurfaces();
+	QList<LayerSurfaceV1 *> getLayerSurfaces(QWaylandOutput *output);
 
 	void updateViewList();
+	QRect applyExclusiveZones(QRect geometry, QWaylandOutput *output);
 	void updateAvailableGeometry();
+	void updateExternalAvailableGeometry();
 };

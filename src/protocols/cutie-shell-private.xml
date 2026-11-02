@@ -14,9 +14,13 @@
 
       <request name="exec_app" since="1">
         <description summary="Start application">
-          This request is used to start an application.
+          This request is used to start an application. The target selects
+          the screen it opens on: "current" (the screen of the requesting
+          client), "internal" (the phone screen) or "external" (the first
+          external screen, or the phone screen if none is connected).
         </description>
         <arg name="path" type="string"/>
+        <arg name="target" type="string"/>
       </request>
 
       <request name="get_thumbnail" since="1">

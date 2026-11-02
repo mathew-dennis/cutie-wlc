@@ -7,6 +7,7 @@
 #include <QtWaylandCompositor/QWaylandClient>
 
 #include <QProcess>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QDateTime>
 #include <QOpenGLTexture>
@@ -29,8 +30,41 @@ void CutieShell::initialize()
 	init(compositor->display(), 1);
 }
 
+QWaylandOutput *CutieShell::targetOutput(Resource *resource,
+					 const QString &target)
+{
+	if (target == "internal")
+		return m_compositor->defaultOutput();
+	if (target == "external") {
+		const QList<QWaylandOutput *> externals =
+			m_compositor->externalOutputs();
+		return externals.isEmpty() ? m_compositor->defaultOutput() :
+					     externals.first();
+	}
+	if (target != "current")
+		qWarning() << "cutie-shell: unknown launch target" << target
+			   << ", using current";
+
+	// The screen of the client that asked, e.g. the launcher
+	QWaylandClient *client = QWaylandClient::fromWlClient(
+		m_compositor, resource->client());
+	for (QWaylandSurface *surface :
+	     m_compositor->surfacesForClient(client)) {
+		QWaylandView *view = surface->primaryView();
+		if (view && view->output())
+			return view->output();
+	}
+	return nullptr;
+}
+
+QWaylandOutput *CutieShell::outputForPid(qint64 pid)
+{
+	return m_launchOutputs.value(pid).data();
+}
+
 void CutieShell::cutie_shell_private_exec_app(Resource *resource,
-					      const QString &path)
+					      const QString &path,
+					      const QString &target)
 {
 	// Learn the app id of apps we started, once their toplevel has mapped
 	for (CwlView *view : m_compositor->getToplevelViews()) {
@@ -67,6 +101,8 @@ void CutieShell::cutie_shell_private_exec_app(Resource *resource,
 		}
 	}
 
+	QWaylandOutput *output = targetOutput(resource, target);
+
 	qputenv("CUTIE_SHELL", QByteArray("true"));
 	qputenv("QT_QPA_PLATFORM", QByteArray("wayland"));
 	qputenv("EGL_PLATFORM", QByteArray("wayland"));
@@ -88,7 +124,19 @@ void CutieShell::cutie_shell_private_exec_app(Resource *resource,
 		return;
 	}
 	m_pendingPids.insert(path, pid);
-	qDebug() << "cutie-shell: launched" << path << "(pid" << pid << ")";
+
+	// Forget processes that have exited, then remember this one
+	for (auto it = m_launchOutputs.begin(); it != m_launchOutputs.end();) {
+		if (it.value().isNull() ||
+		    !QFileInfo::exists(QString("/proc/%1").arg(it.key())))
+			it = m_launchOutputs.erase(it);
+		else
+			++it;
+	}
+	if (output)
+		m_launchOutputs.insert(pid, output);
+	qDebug() << "cutie-shell: launched" << path << "(pid" << pid
+		 << ") target" << target << (output ? "-> output set" : "-> default");
 }
 
 void CutieShell::cutie_shell_private_get_thumbnail(

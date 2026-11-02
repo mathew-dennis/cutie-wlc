@@ -5,7 +5,9 @@
 
 #include <QtWaylandCompositor/QWaylandCompositorExtensionTemplate>
 #include <QtWaylandCompositor/QWaylandCompositor>
+#include <QtWaylandCompositor/QWaylandOutput>
 #include <QHash>
+#include <QPointer>
 #include <QString>
 
 #include "qwayland-server-cutie-shell-private.h"
@@ -31,6 +33,9 @@ class CutieShell : public QWaylandCompositorExtensionTemplate<CutieShell>,
 	CutieShell(CwlCompositor *compositor);
 	void initialize() override;
 
+	// Output chosen when we launched the process with this pid, if any
+	QWaylandOutput *outputForPid(qint64 pid);
+
     signals:
 
     public Q_SLOTS:
@@ -40,18 +45,23 @@ class CutieShell : public QWaylandCompositorExtensionTemplate<CutieShell>,
 
     protected:
 	void cutie_shell_private_exec_app(Resource *resource,
-					  const QString &path) override;
+					  const QString &path,
+					  const QString &target) override;
 	void cutie_shell_private_get_thumbnail(
 		Resource *resource, uint32_t id,
 		struct ::wl_resource *toplevel) override;
 
     private:
+	QWaylandOutput *targetOutput(Resource *resource, const QString &target);
+
 	CwlCompositor *m_compositor;
 
 	// exec string -> pid of the process we started, until its toplevel maps
 	QHash<QString, qint64> m_pendingPids;
 	// exec string -> app_id learned from the toplevel that process created
 	QHash<QString, QString> m_appIds;
+	// pid of a process we started -> screen it was asked to open on
+	QHash<qint64, QPointer<QWaylandOutput> > m_launchOutputs;
 };
 
 #endif //CUTIE_SHELL
