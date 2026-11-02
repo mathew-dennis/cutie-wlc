@@ -58,6 +58,14 @@ QList<CwlView *> CwlWorkspace::getToplevelViews()
 	return m_viewLayerList[CwlViewLayer::TOP];
 }
 
+QList<CwlView *> CwlWorkspace::getAllViews() const
+{
+	QList<CwlView *> views;
+	for (int layer = 0; layer < CwlViewLayer::NUM_LAYERS; ++layer)
+		views << m_viewLayerList[layer];
+	return views;
+}
+
 void CwlWorkspace::hideAllTopLevel()
 {
 	for (CwlView *view : m_viewLayerList[CwlViewLayer::TOP])
@@ -92,14 +100,9 @@ void CwlWorkspace::updateViewList()
 	updateAvailableGeometry();
 }
 
-void CwlWorkspace::updateAvailableGeometry()
+QRect CwlWorkspace::applyExclusiveZones(QRect geometry, QWaylandOutput *output)
 {
-	QRect geometry = m_outputGeometry;
-
-	QList<LayerSurfaceV1 *> lsList = getLayerSurfaces();
-	if (lsList.empty())
-		return;
-
+	QList<LayerSurfaceV1 *> lsList = getLayerSurfaces(output);
 	for (LayerSurfaceV1 *surface : lsList) {
 		if (surface && surface->initialized) {
 			if (surface->ls_anchor == 1 ||
@@ -121,10 +124,46 @@ void CwlWorkspace::updateAvailableGeometry()
 			}
 		}
 	}
+	return geometry;
+}
+
+QRect CwlWorkspace::availableGeometry(QWaylandOutput *output)
+{
+	if (!output || output == m_compositor->defaultOutput())
+		return m_availableGeometry;
+	return applyExclusiveZones(m_compositor->outputFullGeometry(output),
+				   output);
+}
+
+void CwlWorkspace::updateAvailableGeometry()
+{
+	QRect geometry =
+		applyExclusiveZones(m_outputGeometry, m_compositor->defaultOutput());
 
 	if (geometry != m_availableGeometry) {
 		m_availableGeometry = geometry;
 		emit availableGeometryChanged(m_availableGeometry);
+	}
+
+	updateExternalAvailableGeometry();
+}
+
+void CwlWorkspace::updateExternalAvailableGeometry()
+{
+	for (QWaylandOutput *output : m_compositor->externalOutputs()) {
+		const QRect geometry = availableGeometry(output);
+		for (CwlView *root : m_viewLayerList[CwlViewLayer::TOP]) {
+			if (root->output() != output)
+				continue;
+			QList<CwlView *> pending{ root };
+			while (!pending.isEmpty()) {
+				CwlView *view = pending.takeLast();
+				pending.append(view->getChildViews());
+				if (view->isToplevel() &&
+				    view->getAvailableGeometry() != geometry)
+					view->applyAvailableGeometry(geometry);
+			}
+		}
 	}
 }
 
@@ -138,11 +177,11 @@ void CwlWorkspace::onLayerSurfaceDataChanged(LayerSurfaceV1 *surface)
 	updateAvailableGeometry();
 }
 
-QList<LayerSurfaceV1 *> CwlWorkspace::getLayerSurfaces()
+QList<LayerSurfaceV1 *> CwlWorkspace::getLayerSurfaces(QWaylandOutput *output)
 {
 	QList<LayerSurfaceV1 *> ret;
 	for (CwlView *view : m_viewList)
-		if (view->getLayerSurface())
+		if (view->getLayerSurface() && view->output() == output)
 			ret << view->getLayerSurface();
 	return ret;
 }
