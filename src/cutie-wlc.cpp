@@ -5,6 +5,7 @@
 #include <screencopy.h>
 #include <foreign-toplevel-management.h>
 #include <input-method-v2.h>
+#include <decoration.h>
 
 #include <QtWaylandCompositor/QWaylandSeat>
 #include <QtWaylandCompositor/QWaylandOutput>
@@ -304,9 +305,13 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 		return;
 	if (output && m_cursorOutput == output)
 		m_cursorOutput = nullptr;
+	m_grab = WindowGrab();
+	m_decorationPress = DecorationHit();
+	m_hoverView = nullptr;
 
 	if (output) {
 		routeExistingViews(output, m_output);
+		m_workspace->updateViewList();
 		for (CwlView *view : m_workspace->getAllViews()) {
 			LayerSurfaceV1 *layerSurface = view->getLayerSurface();
 			if (view->output() != output || !layerSurface)
@@ -364,8 +369,6 @@ CwlView *CwlCompositor::viewAt(const QPoint &position, QWaylandOutput *output)
 		if (view->output() != output)
 			continue;
 		QRectF geom(view->getPosition(), view->size());
-		if (!geom.contains(checkPoint))
-			continue;
 		for (CwlView *childView : view->getChildViews()) {
 			if (childView->output() != output)
 				continue;
@@ -373,6 +376,8 @@ CwlView *CwlCompositor::viewAt(const QPoint &position, QWaylandOutput *output)
 			if (childGeometry.contains(checkPoint))
 				return childView;
 		}
+		if (!geom.contains(checkPoint))
+			continue;
 		return view;
 	}
 	return nullptr;
@@ -429,6 +434,31 @@ void CwlCompositor::onXdgToplevelCreated(QWaylandXdgToplevel *toplevel,
 		&CwlView::onRedraw);
 	connect(view, &QWaylandView::surfaceDestroyed, this,
 		&CwlCompositor::viewSurfaceDestroyed);
+
+	// Windowed mode requests, only honoured on external screens
+	connect(toplevel, &QWaylandXdgToplevel::setMaximized, view,
+		[view]() { view->setWindowMaximized(true); });
+	connect(toplevel, &QWaylandXdgToplevel::unsetMaximized, view,
+		[view]() { view->setWindowMaximized(false); });
+	connect(toplevel, &QWaylandXdgToplevel::setMinimized, view,
+		[view]() { view->setWindowMinimized(true); });
+	connect(toplevel, &QWaylandXdgToplevel::startMove, this,
+		[this, view](QWaylandSeat *) { beginWindowMove(view); });
+	connect(toplevel, &QWaylandXdgToplevel::startResize, this,
+		[this, view](QWaylandSeat *, Qt::Edges edges) {
+			beginWindowResize(view, edges);
+		});
+	connect(toplevel, &QWaylandXdgToplevel::decorationModeChanged, view,
+		[view, toplevel]() {
+			qInfo() << "Cutie: decoration mode of" << view->getAppId()
+				<< (toplevel->decorationMode() ==
+						    QWaylandXdgToplevel::
+							    ServerSideDecoration ?
+					    "server-side (title bar drawn by cutie-wlc)" :
+					    "client-side");
+			if (view->isWindowable())
+				view->applyWindowMode();
+		});
 }
 
 void CwlCompositor::initInputMethod()
@@ -532,6 +562,10 @@ CwlView *CwlCompositor::getTopPanel()
 
 void CwlCompositor::raise(CwlView *view)
 {
+	if (view->output() != m_output) {
+		raiseWindow(view);
+		return;
+	}
 	m_workspace->raiseView(view);
 
 	if (view->isHidden())
@@ -588,6 +622,8 @@ void CwlCompositor::handleMouseMoveEvent(const QPointF &position,
 {
 	if (!output)
 		output = m_output;
+	if (decorationMove(position, output))
+		return;
 	const qreal outputScale = qMax(1, output->scaleFactor());
 	CwlView *view = output == m_output && launcherPosition() != 0.0
 			? m_launcherView : viewAt(position.toPoint(), output);
@@ -610,8 +646,20 @@ void CwlCompositor::handleMousePressEvent(const QPointF &position,
 					  Qt::MouseButton btn,
 					  QWaylandOutput *output)
 {
+	if (decorationPress(position, btn, output))
+		return;
 	handleMouseMoveEvent(position, output);
+	if (output && output != m_output) {
+		// Click to focus and raise a window
+		CwlView *clicked = viewAt(position.toPoint(), output);
+		CwlView *root = clicked && clicked->parentView() ?
+					clicked->parentView() :
+					clicked;
+		if (root && root->isWindowable() && !isActiveWindow(root))
+			raiseWindow(root);
+	}
 	defaultSeat()->sendMousePressEvent(btn);
+	++m_clientButtons;
 }
 
 void CwlCompositor::handleMouseReleaseEvent(QList<QEventPoint> points,
@@ -626,8 +674,11 @@ void CwlCompositor::handleMouseReleaseEvent(const QPointF &position,
 					    Qt::MouseButton btn,
 					    QWaylandOutput *output)
 {
+	if (decorationRelease(position, btn, output))
+		return;
 	handleMouseMoveEvent(position, output);
 	defaultSeat()->sendMouseReleaseEvent(btn);
+	m_clientButtons = qMax(0, m_clientButtons - 1);
 }
 
 // Output under a position in the Qt virtual desktop and the position local to
@@ -833,6 +884,16 @@ void CwlCompositor::viewSurfaceDestroyed()
 {
 	CwlView *view = qobject_cast<CwlView *>(sender());
 	CwlView *parent = view->parentView();
+	QWaylandOutput *windowOutput = view->isWindowable() ? view->output() :
+							       nullptr;
+	if (m_hoverView == view)
+		m_hoverView = nullptr;
+	if (m_grab.view == view)
+		m_grab = WindowGrab();
+	if (m_decorationPress.view == view)
+		m_decorationPress = DecorationHit();
+	if (m_lastTitleClickView == view)
+		m_lastTitleClickView = nullptr;
 
 	if (parent != nullptr) {
 		if (!view->isPopup())
@@ -848,6 +909,12 @@ void CwlCompositor::viewSurfaceDestroyed()
 	}
 
 	delete view;
+	// Give focus to the next window on that screen
+	if (windowOutput) {
+		CwlView *next = topWindow(windowOutput);
+		if (next && !isActiveWindow(next))
+			raiseWindow(next);
+	}
 	triggerRender();
 }
 
@@ -874,6 +941,356 @@ void CwlCompositor::updateCursor(const QPointF &position, QWaylandOutput *output
 	m_mouseActive = true;
 	m_mouseInactivityTimer->start();
 	triggerRender();
+}
+
+// ---- Windowed mode on external outputs ----
+
+QPointF CwlCompositor::globalPoint(const QPointF &position,
+				   QWaylandOutput *output) const
+{
+	return output->position() + position / qMax(1, output->scaleFactor());
+}
+
+// Content rectangle for a new window: 70% of the available area, cascaded
+QRect CwlCompositor::defaultWindowRect(QWaylandOutput *output)
+{
+	const QRect area = outputGeometry(output);
+	const int bar = CwlDecoration::TitleBarHeight;
+	const QSize minimum = CwlDecoration::minimumWindowSize();
+	QSize size(qMax(minimum.width(), area.width() * 7 / 10),
+		   qMax(minimum.height(), (area.height() - bar) * 7 / 10));
+	size = size.boundedTo(QSize(area.width(), area.height() - bar));
+
+	int windows = 0;
+	for (CwlView *view : m_workspace->getToplevelViews())
+		if (view->output() == output && !view->parentView() &&
+		    !view->isWindowMaximized())
+			++windows;
+	const int offset = (windows % 8) * 32;
+	QPoint pos(area.left() + 48 + offset, area.top() + bar + 32 + offset);
+	pos.setX(qMin(pos.x(), area.right() - size.width() + 1));
+	pos.setY(qMin(pos.y(), area.bottom() - size.height() + 1));
+	return QRect(pos, size);
+}
+
+// Alt+Tab: raise the window that has been below the others the longest,
+// restoring it if it is minimized.
+void CwlCompositor::cycleWindows()
+{
+	QWaylandOutput *output = m_cursorOutput && m_cursorOutput != m_output ?
+					 m_cursorOutput :
+					 (m_externalOutputs.isEmpty() ?
+						  nullptr :
+						  m_externalOutputs.constBegin().value());
+	if (!output)
+		return;
+	for (CwlView *view : m_workspace->getToplevelViews()) {
+		if (view->output() == output && !view->parentView()) {
+			raiseWindow(view);
+			return;
+		}
+	}
+}
+
+CwlView *CwlCompositor::topWindow(QWaylandOutput *output)
+{
+	const QList<CwlView *> views = m_workspace->getToplevelViews();
+	for (auto it = views.crbegin(); it != views.crend(); ++it)
+		if ((*it)->output() == output && !(*it)->parentView() &&
+		    !(*it)->isMinimized())
+			return *it;
+	return nullptr;
+}
+
+bool CwlCompositor::isActiveWindow(CwlView *view)
+{
+	QWaylandSurface *focus = defaultSeat()->keyboardFocus();
+	if (!focus)
+		return false;
+	if (view->surface() == focus)
+		return true;
+	for (CwlView *child : view->getChildViews())
+		if (child->surface() == focus)
+			return true;
+	return false;
+}
+
+void CwlCompositor::raiseWindow(CwlView *view)
+{
+	view->m_minimized = false;
+	m_workspace->raiseView(view);
+	if (view->isHidden())
+		view->setHidden(false);
+	const QList<CwlView *> children = view->getChildViews();
+	defaultSeat()->setKeyboardFocus(children.isEmpty() ?
+						view->surface() :
+						children.last()->surface());
+	triggerRender();
+}
+
+void CwlCompositor::onWindowMinimizedChanged(CwlView *view)
+{
+	m_workspace->updateViewList();
+	if (view->isMinimized()) {
+		if (m_hoverView == view)
+			m_hoverView = nullptr;
+		if (isActiveWindow(view)) {
+			CwlView *next = topWindow(view->output());
+			if (next)
+				raiseWindow(next);
+			else
+				defaultSeat()->setKeyboardFocus(nullptr);
+		}
+	}
+	triggerRender();
+}
+
+void CwlCompositor::setDecorationHover(CwlView *view, int part)
+{
+	// Only the buttons look different when hovered
+	if (part != CwlDecoration::PartMinimize &&
+	    part != CwlDecoration::PartMaximize &&
+	    part != CwlDecoration::PartClose)
+		part = CwlDecoration::PartNone;
+	if (part == CwlDecoration::PartNone)
+		view = nullptr;
+	if (view == m_hoverView && part == m_hoverPart)
+		return;
+	m_hoverView = view;
+	m_hoverPart = part;
+	triggerRender();
+}
+
+// What is under a point (global logical coordinates) on an external output,
+// as far as window decorations are concerned. A window above shields the
+// decorations of the ones below it.
+CwlCompositor::DecorationHit CwlCompositor::decorationAt(const QPointF &point,
+							 QWaylandOutput *output)
+{
+	const QList<CwlView *> views = getViews();
+	for (auto it = views.crbegin(); it != views.crend(); ++it) {
+		CwlView *view = *it;
+		if (view->output() != output)
+			continue;
+		const QRectF content(view->getPosition(), QSizeF(view->size()));
+		if (!view->isWindowable()) {
+			if (view->layer == OVERLAY && content.contains(point))
+				return DecorationHit();
+			continue;
+		}
+		for (CwlView *child : view->getChildViews())
+			if (child->output() == output &&
+			    QRectF(child->getPosition(), QSizeF(child->size()))
+				    .contains(point))
+				return DecorationHit();
+		if (view->hasTitleBar()) {
+			CwlDecoration::Hit hit = CwlDecoration::hitTest(
+				content, point, !view->isWindowMaximized());
+			if (hit.part != CwlDecoration::PartNone) {
+				DecorationHit result;
+				result.view = view;
+				result.part = hit.part;
+				result.edges = hit.edges;
+				return result;
+			}
+			if (CwlDecoration::frameRect(content).contains(point))
+				return DecorationHit();
+		} else if (content.contains(point)) {
+			return DecorationHit();
+		}
+	}
+	return DecorationHit();
+}
+
+void CwlCompositor::beginWindowMove(CwlView *view)
+{
+	if (!view->isWindowable() || m_grab.view)
+		return;
+	m_grab.view = view;
+	m_grab.resize = false;
+	m_grab.startPointer = m_pointerGlobal;
+	m_grab.startRect = QRectF(view->getPosition(), QSizeF(view->size()));
+	m_grab.wasMaximized = view->isWindowMaximized();
+	m_pressConsumed = true;
+	m_clientButtons = 0;
+	defaultSeat()->setMouseFocus(nullptr);
+}
+
+void CwlCompositor::beginWindowResize(CwlView *view, Qt::Edges edges)
+{
+	if (!view->isWindowable() || view->isWindowMaximized() || m_grab.view ||
+	    !edges)
+		return;
+	m_grab.view = view;
+	m_grab.resize = true;
+	m_grab.edges = edges;
+	m_grab.startPointer = m_pointerGlobal;
+	m_grab.startRect = QRectF(view->getPosition(), QSizeF(view->size()));
+	m_grab.wasMaximized = false;
+	m_pressConsumed = true;
+	m_clientButtons = 0;
+	defaultSeat()->setMouseFocus(nullptr);
+}
+
+void CwlCompositor::updateWindowGrab(const QPointF &global)
+{
+	CwlView *view = m_grab.view;
+	const QPointF delta = global - m_grab.startPointer;
+	const QRect area = outputGeometry(view->output());
+	const int bar = view->hasTitleBar() ? CwlDecoration::TitleBarHeight : 0;
+
+	if (m_grab.resize) {
+		QSize size = view->getTopLevel()->sizeForResize(
+			m_grab.startRect.size(), delta, m_grab.edges);
+		size = size.expandedTo(CwlDecoration::minimumWindowSize());
+		QPointF topLeft = m_grab.startRect.topLeft();
+		if (m_grab.edges & Qt::LeftEdge)
+			topLeft.setX(m_grab.startRect.right() - size.width());
+		if (m_grab.edges & Qt::TopEdge)
+			topLeft.setY(m_grab.startRect.bottom() - size.height());
+		view->setWindowRect(QRectF(topLeft, QSizeF(size)), true);
+		return;
+	}
+
+	if (m_grab.wasMaximized) {
+		// Dragging a maximized window restores it under the pointer
+		if (qAbs(delta.x()) < 8 && qAbs(delta.y()) < 8)
+			return;
+		QRectF rect = view->windowedRect();
+		if (!rect.isValid())
+			rect = QRectF(defaultWindowRect(view->output()));
+		const qreal relative =
+			m_grab.startRect.width() > 0 ?
+				(m_grab.startPointer.x() - m_grab.startRect.left()) /
+					m_grab.startRect.width() :
+				0.5;
+		rect.moveTopLeft(QPointF(global.x() - relative * rect.width(),
+					 global.y() + bar / 2.0));
+		view->setWindowRect(rect, false);
+		m_grab.wasMaximized = false;
+		m_grab.startPointer = global;
+		m_grab.startRect = rect;
+		return;
+	}
+
+	// Keep the title bar and part of the window reachable
+	QPointF topLeft = m_grab.startRect.topLeft() + delta;
+	const qreal keep = 80;
+	topLeft.setY(qBound(qreal(area.top() + bar), topLeft.y(),
+			    qreal(area.bottom()) - keep));
+	topLeft.setX(qBound(area.left() - m_grab.startRect.width() + keep,
+			    topLeft.x(), qreal(area.right()) - keep));
+	view->moveWindow(topLeft);
+}
+
+void CwlCompositor::endWindowGrab()
+{
+	CwlView *view = m_grab.view;
+	const bool resized = m_grab.resize;
+	m_grab = WindowGrab();
+	// Clears the resizing state with the final size
+	if (view && resized)
+		view->applyWindowMode();
+	triggerRender();
+}
+
+bool CwlCompositor::decorationMove(const QPointF &position,
+				   QWaylandOutput *output)
+{
+	const QPointF global = globalPoint(position, output);
+	m_pointerGlobal = global;
+	if (m_grab.view) {
+		updateWindowGrab(global);
+		return true;
+	}
+	if (output == m_output || m_clientButtons > 0) {
+		setDecorationHover(nullptr, 0);
+		return false;
+	}
+	const DecorationHit hit = decorationAt(global, output);
+	setDecorationHover(hit.view, hit.part);
+	if (!hit.view && !m_decorationPress.view)
+		return false;
+	defaultSeat()->setMouseFocus(nullptr);
+	return true;
+}
+
+bool CwlCompositor::decorationPress(const QPointF &position,
+				    Qt::MouseButton btn,
+				    QWaylandOutput *output)
+{
+	m_pressConsumed = false;
+	if (!output || output == m_output || m_grab.view)
+		return false;
+	const QPointF global = globalPoint(position, output);
+	m_pointerGlobal = global;
+	const DecorationHit hit = decorationAt(global, output);
+	if (!hit.view)
+		return false;
+
+	m_pressConsumed = true;
+	raiseWindow(hit.view);
+	if (btn != Qt::LeftButton)
+		return true;
+
+	switch (hit.part) {
+	case CwlDecoration::PartTitle: {
+		const bool doubleClick = m_lastTitleClickView == hit.view &&
+					 m_lastTitleClick.isValid() &&
+					 m_lastTitleClick.elapsed() < 400;
+		m_lastTitleClick.restart();
+		m_lastTitleClickView = hit.view;
+		if (doubleClick) {
+			m_lastTitleClickView = nullptr;
+			hit.view->setWindowMaximized(
+				hit.view->isWindowMaximized() ? false : true);
+		} else {
+			beginWindowMove(hit.view);
+		}
+		break;
+	}
+	case CwlDecoration::PartMinimize:
+	case CwlDecoration::PartMaximize:
+	case CwlDecoration::PartClose:
+		m_decorationPress = hit;
+		break;
+	case CwlDecoration::PartResize:
+		beginWindowResize(hit.view, hit.edges);
+		break;
+	}
+	return true;
+}
+
+bool CwlCompositor::decorationRelease(const QPointF &position,
+				      Qt::MouseButton btn,
+				      QWaylandOutput *output)
+{
+	if (!m_pressConsumed)
+		return false;
+	m_pressConsumed = false;
+	if (m_grab.view) {
+		endWindowGrab();
+		return true;
+	}
+	if (m_decorationPress.view) {
+		CwlView *view = m_decorationPress.view;
+		const int part = m_decorationPress.part;
+		m_decorationPress = DecorationHit();
+		const DecorationHit hit =
+			output && output != m_output ?
+				decorationAt(globalPoint(position, output), output) :
+				DecorationHit();
+		if (hit.view == view && hit.part == part) {
+			if (part == CwlDecoration::PartMinimize)
+				view->setWindowMinimized(true);
+			else if (part == CwlDecoration::PartMaximize)
+				view->setWindowMaximized(
+					view->isWindowMaximized() ? false : true);
+			else if (part == CwlDecoration::PartClose)
+				view->getTopLevel()->sendClose();
+		}
+	}
+	return true;
 }
 
 void CwlCompositor::triggerRender()

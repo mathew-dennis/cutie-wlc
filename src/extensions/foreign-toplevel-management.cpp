@@ -144,21 +144,26 @@ void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_destroy_resource(
 void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_set_maximized(
 	Resource *resource)
 {
+	m_view->setWindowMaximized(true);
 }
 
 void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_unset_maximized(
 	Resource *resource)
 {
+	m_view->setWindowMaximized(false);
 }
 
 void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_set_minimized(
 	Resource *resource)
 {
+	m_view->setWindowMinimized(true);
 }
 
 void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_unset_minimized(
 	Resource *resource)
 {
+	if (m_view->isMinimized())
+		m_compositor->raise(m_view);
 }
 
 void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_activate(

@@ -1,4 +1,5 @@
 #include <glwindow.h>
+#include <decoration.h>
 
 #include <QPainter>
 #include <QMatrix4x4>
@@ -86,6 +87,8 @@ void GlWindow::paintGL()
 {
 	if (m_displayOff || !m_output)
 		return;
+	qDeleteAll(m_staleTextures);
+	m_staleTextures.clear();
 	m_cwlcompositor->startRender(m_output);
 	const bool primaryOutput = m_output == m_cwlcompositor->defaultOutput();
 
@@ -136,6 +139,8 @@ void GlWindow::paintGL()
 		    view->layer == CwlViewLayer::TOP)
 			continue;
 
+		if (!primaryOutput && view->hasTitleBar())
+			renderTitleBar(view);
 		renderView(view);
 	}
 
@@ -143,6 +148,56 @@ void GlWindow::paintGL()
 
 	m_textureBlitter.release();
 	m_cwlcompositor->endRender(m_output);
+}
+
+void GlWindow::renderTitleBar(CwlView *view)
+{
+	const int outputScale = qMax(1, m_output->scaleFactor());
+	const QRectF bar = CwlDecoration::titleBarRect(
+		QRectF(view->getPosition(), QSizeF(view->size())));
+	const QSize pixels = (bar.size() * outputScale).toSize();
+	if (pixels.isEmpty())
+		return;
+
+	CwlCompositor *c = m_cwlcompositor;
+	const QString title = view->getTitle();
+	const bool active = c->isActiveWindow(view);
+	const bool maximized = view->isWindowMaximized();
+	const int hover = c->m_hoverView == view ? c->m_hoverPart : 0;
+
+	if (!m_titleBars.contains(view)) {
+		// The texture belongs to this window's context; free it later
+		connect(view, &QObject::destroyed, this, [this, view]() {
+			QOpenGLTexture *old = m_titleBars.take(view).texture;
+			if (old)
+				m_staleTextures << old;
+		});
+	}
+	TitleBarTexture &entry = m_titleBars[view];
+	if (!entry.texture || entry.size != pixels || entry.title != title ||
+	    entry.active != active || entry.maximized != maximized ||
+	    entry.hover != hover) {
+		delete entry.texture;
+		entry.texture = new QOpenGLTexture(CwlDecoration::paintTitleBar(
+			pixels, outputScale, title, active, maximized, hover));
+		entry.size = pixels;
+		entry.title = title;
+		entry.active = active;
+		entry.maximized = maximized;
+		entry.hover = hover;
+	}
+
+	if (entry.texture->target() != m_currentTarget) {
+		m_currentTarget = entry.texture->target();
+		m_textureBlitter.bind(m_currentTarget);
+	}
+	m_textureBlitter.setOpacity(1.0);
+	const QRectF target((bar.topLeft() - m_output->position()) * outputScale,
+			    QSizeF(pixels));
+	m_textureBlitter.blit(entry.texture->textureId(),
+			      QOpenGLTextureBlitter::targetTransform(
+				      target, QRect(QPoint(), size())),
+			      QOpenGLTextureBlitter::OriginTopLeft);
 }
 
 void GlWindow::renderCursor()
@@ -190,7 +245,8 @@ void GlWindow::renderCursor()
 bool GlWindow::ownsPointer(QWaylandOutput *output) const
 {
 	QWaylandOutput *primary = m_cwlcompositor->defaultOutput();
-	return output == primary && m_output == primary;
+	return output == primary && m_output == primary &&
+	       !m_cwlcompositor->windowGrabActive();
 }
 
 // Output under the pointer and the position local to it, taken from the global
@@ -328,6 +384,12 @@ void GlWindow::keyPressEvent(QKeyEvent *event)
 		m_cwlcompositor->specialKey(
 			CutieShell::SpecialKey::VOLUME_DOWN_PRESS);
 
+	if (event->key() == Qt::Key_Tab && (event->modifiers() & Qt::AltModifier)) {
+		if (!event->isAutoRepeat())
+			m_cwlcompositor->cycleWindows();
+		return;
+	}
+
 	if (!isForwardedKey(event))
 		return;
 	m_cwlcompositor->handleKeyPress(event->nativeScanCode());
@@ -346,6 +408,9 @@ void GlWindow::keyReleaseEvent(QKeyEvent *event)
 	if (event->key() == Qt::Key_VolumeDown)
 		m_cwlcompositor->specialKey(
 			CutieShell::SpecialKey::VOLUME_DOWN_RELEASE);
+
+	if (event->key() == Qt::Key_Tab && (event->modifiers() & Qt::AltModifier))
+		return;
 
 	if (!isForwardedKey(event))
 		return;

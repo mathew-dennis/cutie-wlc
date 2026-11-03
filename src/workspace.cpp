@@ -35,7 +35,8 @@ void CwlWorkspace::addView(CwlView *view)
 {
 	m_viewLayerList[view->layer] << view;
 	updateViewList();
-	if (view->isToplevel() && !view->isHidden())
+	if (view->isToplevel() && !view->isHidden() &&
+	    view->output() == m_compositor->defaultOutput())
 		showDesktop(false);
 }
 
@@ -44,7 +45,8 @@ void CwlWorkspace::raiseView(CwlView *view)
 	m_viewLayerList[view->layer].removeAll(view);
 	m_viewLayerList[view->layer] << view;
 	updateViewList();
-	if (view->isToplevel() && !view->isHidden())
+	if (view->isToplevel() && !view->isHidden() &&
+	    view->output() == m_compositor->defaultOutput())
 		showDesktop(false);
 }
 
@@ -68,8 +70,10 @@ QList<CwlView *> CwlWorkspace::getAllViews() const
 
 void CwlWorkspace::hideAllTopLevel()
 {
+	// Showing the desktop is a phone thing; external windows stay
 	for (CwlView *view : m_viewLayerList[CwlViewLayer::TOP])
-		view->setHidden(true);
+		if (view->output() == m_compositor->defaultOutput())
+			view->setHidden(true);
 	showDesktop(true);
 }
 
@@ -90,11 +94,26 @@ void CwlWorkspace::updateViewList()
 	m_viewList = m_viewLayerList[CwlViewLayer::BACKGROUND] +
 		     m_viewLayerList[CwlViewLayer::BOTTOM];
 
-	if (!m_showDesktop && !m_viewLayerList[CwlViewLayer::TOP].isEmpty())
-		if (m_singleView)
-			m_viewList << m_viewLayerList[CwlViewLayer::TOP].last();
-		else
-			m_viewList << m_viewLayerList[CwlViewLayer::TOP];
+	// The phone shows one app at a time; windows on external screens are
+	// all visible unless minimized.
+	QWaylandOutput *primary = m_compositor->defaultOutput();
+	const QList<CwlView *> &top = m_viewLayerList[CwlViewLayer::TOP];
+	CwlView *lastPrimary = nullptr;
+	for (auto it = top.crbegin(); it != top.crend(); ++it) {
+		if ((*it)->output() == primary) {
+			lastPrimary = *it;
+			break;
+		}
+	}
+	for (CwlView *view : top) {
+		if (view->output() == primary) {
+			if (m_showDesktop || (m_singleView && view != lastPrimary))
+				continue;
+		} else if (view->isMinimized()) {
+			continue;
+		}
+		m_viewList << view;
+	}
 
 	m_viewList << m_viewLayerList[CwlViewLayer::OVERLAY];
 	updateAvailableGeometry();

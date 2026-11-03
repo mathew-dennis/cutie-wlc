@@ -21,6 +21,7 @@ class CwlWorkspace : public QObject {
 	void hideAllTopLevel();
 	void showDesktop(bool show);
 	void singleView(bool single);
+	void updateViewList();
 
     public slots:
 	void onLayerSurfaceDataChanged(LayerSurfaceV1 *surface);
@@ -42,7 +43,6 @@ class CwlWorkspace : public QObject {
 
 	QList<LayerSurfaceV1 *> getLayerSurfaces(QWaylandOutput *output);
 
-	void updateViewList();
 	QRect applyExclusiveZones(QRect geometry, QWaylandOutput *output);
 	void updateAvailableGeometry();
 	void updateExternalAvailableGeometry();

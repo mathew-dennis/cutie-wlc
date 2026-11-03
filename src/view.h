@@ -80,6 +80,30 @@ class CwlView : public QWaylandView {
 	}
 	void setPopUp(QWaylandXdgPopup *popup);
 
+	// Windowed mode. Only toplevels on external outputs can be windowed,
+	// minimized or have a title bar; windows on the phone stay maximized.
+	bool isWindowedOutput();
+	bool isWindowable();
+	bool hasTitleBar();
+	bool isWindowMaximized() const
+	{
+		return !m_windowed;
+	}
+	bool isMinimized() const
+	{
+		return m_minimized;
+	}
+	QRectF windowedRect() const
+	{
+		return m_restoreRect;
+	}
+	void setWindowMaximized(bool maximized);
+	void setWindowMinimized(bool minimized);
+	// Size and position of the windowed content, e.g. while resizing
+	void setWindowRect(const QRectF &rect, bool resizing);
+	void moveWindow(const QPointF &topLeft);
+	void applyWindowMode();
+
 	void setAppId();
 
 	QString getAppId();
@@ -107,6 +131,9 @@ class CwlView : public QWaylandView {
 	LayerSurfaceV1 *m_layerSurface = nullptr;
 	CwlView *m_parentView = nullptr;
 	bool m_hidden = false;
+	bool m_windowed = false;
+	bool m_minimized = false;
+	QRectF m_restoreRect;
 	QList<CwlView *> m_childViewList;
 	QRect m_availableGeometry;
 	bool m_isTopLevel = false;

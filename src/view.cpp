@@ -1,4 +1,5 @@
 #include <view.h>
+#include <decoration.h>
 #include <cutie-wlc.h>
 #include <QOpenGLTexture>
 #include <QtWaylandCompositor/QWaylandSeat>
@@ -110,8 +111,7 @@ void CwlView::applyAvailableGeometry(const QRect &geometry)
 	m_availableGeometry = geometry;
 	if (layer == TOP) {
 		if (isToplevel()) {
-			setPosition(geometry.topLeft());
-			m_toplevel->sendMaximized(geometry.size());
+			applyWindowMode();
 		} else if (m_toplevel->xdgSurface()->popup()) {
 			setPosition(m_toplevel->xdgSurface()
 					    ->popup()
@@ -162,9 +162,100 @@ void CwlView::setDesktopOutput(QWaylandOutput *output, const QRect &geometry)
 	QWaylandView::setOutput(output);
 	m_availableGeometry = geometry;
 	if (m_isTopLevel && m_toplevel) {
-		m_toplevel->sendMaximized(geometry.size());
-		setPosition(geometry.topLeft());
+		// Windows on the phone are always maximized and visible
+		if (output == m_cwlcompositor->defaultOutput()) {
+			m_windowed = false;
+			m_minimized = false;
+		}
+		applyWindowMode();
 	}
+}
+
+bool CwlView::isWindowedOutput()
+{
+	return output() && output() != m_cwlcompositor->defaultOutput();
+}
+
+// Plain toplevels on an external screen can be windowed, maximized, minimized
+bool CwlView::isWindowable()
+{
+	return m_isTopLevel && m_toplevel && !m_parentView && layer == TOP &&
+	       isWindowedOutput();
+}
+
+// Only windows that let us draw their decoration get a title bar
+bool CwlView::hasTitleBar()
+{
+	return isWindowable() &&
+	       m_toplevel->decorationMode() ==
+		       QWaylandXdgToplevel::ServerSideDecoration;
+}
+
+// Send the size this window should have and put it in place
+void CwlView::applyWindowMode()
+{
+	if (!m_isTopLevel || !m_toplevel)
+		return;
+	if (m_parentView && isWindowedOutput())
+		return;
+	if (m_windowed && !m_parentView && isWindowedOutput() &&
+	    m_restoreRect.isValid()) {
+		m_toplevel->sendUnmaximized(m_restoreRect.size().toSize());
+		setPosition(m_restoreRect.topLeft());
+		return;
+	}
+	QRect area = m_availableGeometry;
+	if (hasTitleBar())
+		area.adjust(0, CwlDecoration::TitleBarHeight, 0, 0);
+	m_toplevel->sendMaximized(area.size());
+	setPosition(area.topLeft());
+}
+
+void CwlView::setWindowMaximized(bool maximize)
+{
+	if (!isWindowable() || maximize == !m_windowed)
+		return;
+	if (maximize) {
+		const QRectF current(getPosition(), QSizeF(size()));
+		if (current.isValid())
+			m_restoreRect = current;
+		m_windowed = false;
+	} else {
+		m_windowed = true;
+	}
+	qInfo() << "Cutie: window" << getAppId()
+		<< (maximize ? "maximized" : "restored");
+	applyWindowMode();
+	m_cwlcompositor->triggerRender();
+}
+
+void CwlView::setWindowMinimized(bool minimize)
+{
+	if (!isWindowable() || m_minimized == minimize)
+		return;
+	m_minimized = minimize;
+	qInfo() << "Cutie: window" << getAppId()
+		<< (minimize ? "minimized" : "restored from minimized");
+	m_cwlcompositor->onWindowMinimizedChanged(this);
+}
+
+void CwlView::setWindowRect(const QRectF &rect, bool resizing)
+{
+	m_windowed = true;
+	m_restoreRect = rect;
+	if (resizing) {
+		m_toplevel->sendResizing(rect.size().toSize());
+		setPosition(rect.topLeft());
+	} else {
+		applyWindowMode();
+	}
+}
+
+void CwlView::moveWindow(const QPointF &topLeft)
+{
+	if (m_windowed)
+		m_restoreRect.moveTopLeft(topLeft);
+	setPosition(topLeft);
 }
 
 void CwlView::setPopUp(QWaylandXdgPopup *popup)
@@ -231,8 +322,15 @@ void CwlView::onAppIdChanged()
 					->surface());
 			parent_view->addChildView(this);
 			this->setParentView(parent_view);
-			m_toplevel->sendMaximized(m_availableGeometry.size());
-			this->setPosition(m_availableGeometry.topLeft());
+			if (isWindowedOutput()) {
+				// Dialogs pick their own size on windowed screens
+				m_toplevel->sendUnmaximized(QSize(0, 0));
+				this->setPosition(parent_view->getPosition());
+			} else {
+				m_toplevel->sendMaximized(
+					m_availableGeometry.size());
+				this->setPosition(m_availableGeometry.topLeft());
+			}
 			connect(m_toplevel->xdgSurface(),
 				&QWaylandXdgSurface::windowGeometryChanged,
 				this, &CwlView::onWindowGeometryChanged);
@@ -242,11 +340,17 @@ void CwlView::onAppIdChanged()
 			m_cwlcompositor->defaultSeat()->setKeyboardFocus(
 				this->surface());
 		} else {
+			if (isWindowedOutput()) {
+				m_windowed = true;
+				m_restoreRect = m_cwlcompositor->defaultWindowRect(
+					output());
+				qInfo() << "Cutie: window" << getAppId()
+					<< "opens windowed at" << m_restoreRect;
+			}
 			m_cwlcompositor->m_workspace->addView(this);
 			emit m_cwlcompositor->m_workspace->toplevelCreated(
 				this);
-			m_toplevel->sendMaximized(m_availableGeometry.size());
-			this->setPosition(m_availableGeometry.topLeft());
+			applyWindowMode();
 			m_cwlcompositor->raise(this);
 		}
 	}
@@ -261,6 +365,21 @@ void CwlView::onWindowGeometryChanged()
 					       ->windowGeometry();
 		QRect currentGeometry =
 			m_toplevel->xdgSurface()->windowGeometry();
+		if (isWindowedOutput()) {
+			const QRectF parentRect(parentView()->getPosition(),
+						QSizeF(parentView()->size()));
+			currentGeometry.moveCenter(parentRect.center().toPoint());
+			currentGeometry.moveLeft(qBound(
+				m_availableGeometry.left(), currentGeometry.left(),
+				m_availableGeometry.right() -
+					currentGeometry.width() + 1));
+			currentGeometry.moveTop(qBound(
+				m_availableGeometry.top(), currentGeometry.top(),
+				m_availableGeometry.bottom() -
+					currentGeometry.height() + 1));
+			this->setPosition(currentGeometry.topLeft());
+			return;
+		}
 		if (currentGeometry.size().height() <=
 			    m_availableGeometry.size().height() ||
 		    currentGeometry.size().width() <=

@@ -8,6 +8,7 @@
 #include <QEventPoint>
 #include <QHash>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QProcess>
 #include <QPropertyAnimation>
 #include <QWaylandXdgDecorationManagerV1>
@@ -58,6 +59,20 @@ class CwlCompositor : public QWaylandCompositor {
 	void handleMouseReleaseEvent(const QPointF &position, Qt::MouseButton btn,
 				     QWaylandOutput *output);
 	QWaylandOutput *outputAtGlobal(const QPointF &global, QPointF *local) const;
+
+	// Windowed mode on external outputs
+	QRect defaultWindowRect(QWaylandOutput *output);
+	void raiseWindow(CwlView *view);
+	void cycleWindows();
+	CwlView *topWindow(QWaylandOutput *output);
+	bool isActiveWindow(CwlView *view);
+	void onWindowMinimizedChanged(CwlView *view);
+	void beginWindowMove(CwlView *view);
+	void beginWindowResize(CwlView *view, Qt::Edges edges);
+	bool windowGrabActive() const
+	{
+		return m_grab.view != nullptr;
+	}
 	QWaylandOutput *outputForToplevel(CwlView *view);
 	QRect outputGeometry(QWaylandOutput *output) const;
 	QRect outputFullGeometry(QWaylandOutput *output) const;
@@ -91,6 +106,8 @@ class CwlCompositor : public QWaylandCompositor {
 	QPoint m_cursorHotspot;
 	bool m_cursorHidden = false;
 	bool m_mouseActive = false;
+	CwlView *m_hoverView = nullptr;
+	int m_hoverPart = 0;
 
 	CwlView *getHomeView();
 
@@ -162,6 +179,38 @@ class CwlCompositor : public QWaylandCompositor {
 	int m_scaleFactor = 1;
 	bool m_created = false;
 	QTimer *m_mouseInactivityTimer = nullptr;
+
+	struct DecorationHit {
+		CwlView *view = nullptr;
+		int part = 0;
+		Qt::Edges edges;
+	};
+	struct WindowGrab {
+		CwlView *view = nullptr;
+		bool resize = false;
+		Qt::Edges edges;
+		QPointF startPointer;
+		QRectF startRect;
+		bool wasMaximized = false;
+	};
+	DecorationHit decorationAt(const QPointF &global, QWaylandOutput *output);
+	bool decorationMove(const QPointF &position, QWaylandOutput *output);
+	bool decorationPress(const QPointF &position, Qt::MouseButton btn,
+			     QWaylandOutput *output);
+	bool decorationRelease(const QPointF &position, Qt::MouseButton btn,
+			       QWaylandOutput *output);
+	void updateWindowGrab(const QPointF &global);
+	void endWindowGrab();
+	QPointF globalPoint(const QPointF &position, QWaylandOutput *output) const;
+	void setDecorationHover(CwlView *view, int part);
+
+	WindowGrab m_grab;
+	DecorationHit m_decorationPress;
+	QPointF m_pointerGlobal;
+	int m_clientButtons = 0;
+	bool m_pressConsumed = false;
+	CwlView *m_lastTitleClickView = nullptr;
+	QElapsedTimer m_lastTitleClick;
 	double m_blur = 0.0;
 	double m_launcherPosition = 1.0;
 	bool m_homeOpen = true;
