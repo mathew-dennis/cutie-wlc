@@ -107,6 +107,7 @@ class CwlCompositor : public QWaylandCompositor {
 	bool m_cursorHidden = false;
 	bool m_mouseActive = false;
 	CwlView *m_hoverView = nullptr;
+	int m_cursorShape = 0;
 	int m_hoverPart = 0;
 
 	CwlView *getHomeView();
@@ -203,6 +204,7 @@ class CwlCompositor : public QWaylandCompositor {
 	void endWindowGrab();
 	QPointF globalPoint(const QPointF &position, QWaylandOutput *output) const;
 	void setDecorationHover(CwlView *view, int part);
+	void setCursorShape(int shape);
 
 	WindowGrab m_grab;
 	DecorationHit m_decorationPress;

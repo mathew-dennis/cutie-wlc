@@ -60,6 +60,52 @@ Hit hitTest(const QRectF &content, const QPointF &point, bool resizable)
 	return hit;
 }
 
+CursorShape cursorForEdges(Qt::Edges edges)
+{
+	const bool left = edges & Qt::LeftEdge;
+	const bool right = edges & Qt::RightEdge;
+	const bool top = edges & Qt::TopEdge;
+	const bool bottom = edges & Qt::BottomEdge;
+	if ((left || right) && (top || bottom))
+		return (left == top) ? CursorResizeNWSE : CursorResizeNESW;
+	if (left || right)
+		return CursorResizeH;
+	if (top || bottom)
+		return CursorResizeV;
+	return CursorArrow;
+}
+
+// Double headed arrow, rotated for the other resize directions
+QImage cursorImage(int shape)
+{
+	QImage image(24, 24, QImage::Format_ARGB32);
+	image.fill(Qt::transparent);
+	QPainter p(&image);
+	p.setRenderHint(QPainter::Antialiasing);
+	p.translate(12, 12);
+	if (shape == CursorResizeV)
+		p.rotate(90);
+	else if (shape == CursorResizeNWSE)
+		p.rotate(45);
+	else if (shape == CursorResizeNESW)
+		p.rotate(-45);
+	p.translate(-12, -12);
+	p.setPen(QPen(Qt::black, 1.2));
+	p.setBrush(Qt::white);
+	p.drawPolygon(QPolygonF({ QPointF(2, 12), QPointF(8, 6.5),
+				  QPointF(8, 10), QPointF(16, 10),
+				  QPointF(16, 6.5), QPointF(22, 12),
+				  QPointF(16, 17.5), QPointF(16, 14),
+				  QPointF(8, 14), QPointF(8, 17.5) }));
+	p.end();
+	return image.convertToFormat(QImage::Format_RGBA8888);
+}
+
+QPoint cursorHotspot(int shape)
+{
+	return shape == CursorArrow ? QPoint(0, 0) : QPoint(12, 12);
+}
+
 QImage paintTitleBar(const QSize &pixelSize, qreal scale, const QString &title,
 		     bool active, bool maximized, int hover)
 {

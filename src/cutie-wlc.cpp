@@ -1045,6 +1045,14 @@ void CwlCompositor::onWindowMinimizedChanged(CwlView *view)
 	triggerRender();
 }
 
+void CwlCompositor::setCursorShape(int shape)
+{
+	if (shape == m_cursorShape)
+		return;
+	m_cursorShape = shape;
+	triggerRender();
+}
+
 void CwlCompositor::setDecorationHover(CwlView *view, int part)
 {
 	// Only the buttons look different when hovered
@@ -1188,6 +1196,8 @@ void CwlCompositor::endWindowGrab()
 	CwlView *view = m_grab.view;
 	const bool resized = m_grab.resize;
 	m_grab = WindowGrab();
+	// The next pointer motion picks the right shape again
+	m_cursorShape = CwlDecoration::CursorClient;
 	// Clears the resizing state with the final size
 	if (view && resized)
 		view->applyWindowMode();
@@ -1200,17 +1210,26 @@ bool CwlCompositor::decorationMove(const QPointF &position,
 	const QPointF global = globalPoint(position, output);
 	m_pointerGlobal = global;
 	if (m_grab.view) {
+		setCursorShape(m_grab.resize ?
+				       CwlDecoration::cursorForEdges(m_grab.edges) :
+				       CwlDecoration::CursorArrow);
 		updateWindowGrab(global);
 		return true;
 	}
 	if (output == m_output || m_clientButtons > 0) {
 		setDecorationHover(nullptr, 0);
+		setCursorShape(CwlDecoration::CursorClient);
 		return false;
 	}
 	const DecorationHit hit = decorationAt(global, output);
 	setDecorationHover(hit.view, hit.part);
-	if (!hit.view && !m_decorationPress.view)
+	if (!hit.view && !m_decorationPress.view) {
+		setCursorShape(CwlDecoration::CursorClient);
 		return false;
+	}
+	setCursorShape(hit.view && hit.part == CwlDecoration::PartResize ?
+			       CwlDecoration::cursorForEdges(hit.edges) :
+			       CwlDecoration::CursorArrow);
 	defaultSeat()->setMouseFocus(nullptr);
 	return true;
 }

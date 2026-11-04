@@ -80,6 +80,19 @@ void GlWindow::initializeGL()
 	m_fallbackCursor =
 		new QOpenGLTexture(arrow.convertToFormat(QImage::Format_RGBA8888));
 
+	// Resize pointers and the window border colors
+	for (int shape = CwlDecoration::CursorResizeH;
+	     shape < CwlDecoration::CursorShapeCount; ++shape)
+		m_shapeCursors[shape] = new QOpenGLTexture(
+			CwlDecoration::cursorImage(shape));
+	for (int active = 0; active < 2; ++active) {
+		QImage color(1, 1, QImage::Format_ARGB32);
+		color.fill(CwlDecoration::borderColor(active));
+		m_borderTextures[active] =
+			new QOpenGLTexture(color.convertToFormat(
+				QImage::Format_RGBA8888));
+	}
+
 	emit glReady();
 }
 
@@ -139,8 +152,10 @@ void GlWindow::paintGL()
 		    view->layer == CwlViewLayer::TOP)
 			continue;
 
-		if (!primaryOutput && view->hasTitleBar())
+		if (!primaryOutput && view->hasTitleBar()) {
+			renderBorder(view, m_cwlcompositor->isActiveWindow(view));
 			renderTitleBar(view);
+		}
 		renderView(view);
 	}
 
@@ -148,6 +163,39 @@ void GlWindow::paintGL()
 
 	m_textureBlitter.release();
 	m_cwlcompositor->endRender(m_output);
+}
+
+void GlWindow::renderBorder(CwlView *view, bool active)
+{
+	// A maximized window fills the area, nothing to frame
+	if (view->isWindowMaximized())
+		return;
+	const int outputScale = qMax(1, m_output->scaleFactor());
+	const qreal b = CwlDecoration::BorderWidth;
+	const QRectF f = CwlDecoration::frameRect(
+		QRectF(view->getPosition(), QSizeF(view->size())));
+	const QRectF edges[4] = {
+		QRectF(f.left() - b, f.top() - b, f.width() + 2 * b, b),
+		QRectF(f.left() - b, f.bottom(), f.width() + 2 * b, b),
+		QRectF(f.left() - b, f.top(), b, f.height()),
+		QRectF(f.right(), f.top(), b, f.height())
+	};
+
+	QOpenGLTexture *texture = m_borderTextures[active ? 1 : 0];
+	if (texture->target() != m_currentTarget) {
+		m_currentTarget = texture->target();
+		m_textureBlitter.bind(m_currentTarget);
+	}
+	m_textureBlitter.setOpacity(1.0);
+	for (const QRectF &edge : edges) {
+		const QRectF target((edge.topLeft() - m_output->position()) *
+					    outputScale,
+				    edge.size() * outputScale);
+		m_textureBlitter.blit(texture->textureId(),
+				      QOpenGLTextureBlitter::targetTransform(
+					      target, QRect(QPoint(), size())),
+				      QOpenGLTextureBlitter::OriginTopLeft);
+	}
 }
 
 void GlWindow::renderTitleBar(CwlView *view)
@@ -203,8 +251,10 @@ void GlWindow::renderTitleBar(CwlView *view)
 void GlWindow::renderCursor()
 {
 	CwlCompositor *c = m_cwlcompositor;
-	if (!c->m_mouseActive || c->m_cursorHidden ||
-	    c->m_cursorOutput != m_output)
+	if (!c->m_mouseActive || c->m_cursorOutput != m_output)
+		return;
+	const int shape = c->m_cursorShape;
+	if (shape == CwlDecoration::CursorClient && c->m_cursorHidden)
 		return;
 
 	const int outputScale = qMax(1, m_output->scaleFactor());
@@ -214,7 +264,13 @@ void GlWindow::renderCursor()
 	auto origin = QOpenGLTextureBlitter::OriginTopLeft;
 
 	CwlView *view = c->m_cursorView;
-	if (view && view->surface() && view->surface()->hasContent()) {
+	if (shape != CwlDecoration::CursorClient) {
+		texture = shape == CwlDecoration::CursorArrow ?
+				  m_fallbackCursor :
+				  m_shapeCursors[shape];
+		topLeft -= QPointF(CwlDecoration::cursorHotspot(shape));
+	} else if (view && view->surface() &&
+		   view->surface()->hasContent()) {
 		view->setOutput(m_output);
 		texture = view->getTexture();
 		if (texture) {

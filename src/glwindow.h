@@ -42,6 +42,7 @@ class GlWindow : public QOpenGLWindow {
 	void renderView(CwlView *view);
 	void renderCursor();
 	void renderTitleBar(CwlView *view);
+	void renderBorder(CwlView *view, bool active);
 	bool ownsPointer(QWaylandOutput *output) const;
 	QWaylandOutput *pointerTarget(const QMouseEvent *ev, QPointF *local) const;
 	void trackCursor(const QMouseEvent *ev, const QPointF &local,
@@ -52,6 +53,8 @@ class GlWindow : public QOpenGLWindow {
 	GLenum m_currentTarget;
 	QOpenGLTexture *m_wallpaper = nullptr;
 	QOpenGLTexture *m_fallbackCursor = nullptr;
+	QOpenGLTexture *m_shapeCursors[6] = {};
+	QOpenGLTexture *m_borderTextures[2] = {};
 
 	struct TitleBarTexture {
 		QOpenGLTexture *texture = nullptr;
