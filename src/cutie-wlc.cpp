@@ -16,6 +16,7 @@
 #include <QTouchEvent>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
+#include <QDebug>
 
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
@@ -286,6 +287,12 @@ void CwlCompositor::createExternalOutput(QScreen *screen, GlWindow *window)
 	output->setPhysicalSize(screen->physicalSize().toSize());
 	output->setModel(screen->name());
 	m_externalOutputs.insert(screen, output);
+	qInfo() << "Cutie external output configuration:"
+		<< "Screen:" << screen->name()
+		<< "Geometry:" << screen->geometry()
+		<< "DPR:" << screen->devicePixelRatio()
+		<< "Window:" << window->size()
+		<< "Window DPR:" << window->devicePixelRatio();
 	window->setOutput(output);
 	qInfo() << "Cutie: screens: primary" << m_glwindow->screen()->geometry()
 		<< "virtual" << m_glwindow->screen()->virtualGeometry()
