@@ -8,6 +8,7 @@
 #include <QMouseEvent>
 #include <QGuiApplication>
 #include <QDebug>
+#include <QSet>
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qplatformscreen.h>
 #include <QtWaylandCompositor/QWaylandSeat>
@@ -362,6 +363,22 @@ void GlWindow::renderView(CwlView *view)
 		auto surfaceOrigin = view->textureOrigin();
 		const int outputScale = qMax(1, m_output->scaleFactor());
 		QRectF targetRect(viewPosition * outputScale, viewSize * outputScale);
+
+		if (m_output != m_cwlcompositor->defaultOutput()) {
+			static QSet<QString> seen;
+			const QSize buf = surface->bufferSize();
+			const QString key = QString("%1 buf %2x%3 bufScale %4 dest %5x%6 -> target %7x%8")
+				.arg(view->getAppId())
+				.arg(buf.width()).arg(buf.height())
+				.arg(surface->bufferScale())
+				.arg(viewSize.width()).arg(viewSize.height())
+				.arg(qRound(targetRect.width()))
+				.arg(qRound(targetRect.height()));
+			if (!seen.contains(key)) {
+				seen.insert(key);
+				qInfo() << "Cutie view blit:" << key;
+			}
+		}
 
 		QMatrix4x4 targetTransform =
 			QOpenGLTextureBlitter::targetTransform(
