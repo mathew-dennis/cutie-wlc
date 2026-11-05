@@ -9,6 +9,7 @@
 #include <QGuiApplication>
 #include <QDebug>
 #include <QSet>
+#include <wayland-server-core.h>
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qplatformscreen.h>
 #include <QtWaylandCompositor/QWaylandSeat>
@@ -367,8 +368,9 @@ void GlWindow::renderView(CwlView *view)
 		if (m_output != m_cwlcompositor->defaultOutput()) {
 			static QSet<QString> seen;
 			const QSize buf = surface->bufferSize();
-			const QString key = QString("%1 buf %2x%3 bufScale %4 dest %5x%6 -> target %7x%8")
+			const QString key = QString("%1 wl_surface#%2 buf %3x%4 bufScale %5 dest %6x%7 -> target %8x%9")
 				.arg(view->getAppId())
+				.arg(wl_resource_get_id(surface->resource()))
 				.arg(buf.width()).arg(buf.height())
 				.arg(surface->bufferScale())
 				.arg(viewSize.width()).arg(viewSize.height())
