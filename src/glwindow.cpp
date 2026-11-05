@@ -30,6 +30,7 @@ void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
 void GlWindow::setOutput(QWaylandOutput *output)
 {
 	m_output = output;
+	m_externalRenderLogged = false;
 	requestUpdate();
 }
 
@@ -107,18 +108,23 @@ void GlWindow::paintGL()
 	const bool primaryOutput = m_output == m_cwlcompositor->defaultOutput();
 
 	QOpenGLFunctions *functions = context()->functions();
-	GLint viewport[4] = {};
-	functions->glGetIntegerv(GL_VIEWPORT, viewport);
 
-	qInfo() << "Cutie external rendering:"
-		<< "Screen:" << screen()->name()
-		<< "Screen geometry:" << screen()->geometry()
-		<< "Screen DPR:" << screen()->devicePixelRatio()
-		<< "Window size:" << size()
-		<< "Window DPR:" << devicePixelRatio()
-		<< "Framebuffer:" << viewport[2] << "x" << viewport[3]
-		<< "Wayland mode:" << m_output->currentMode().size()
-		<< "Wayland scale:" << m_output->scaleFactor();
+	if (!primaryOutput && !m_externalRenderLogged) {
+		GLint viewport[4] = {};
+		functions->glGetIntegerv(GL_VIEWPORT, viewport);
+
+		qInfo() << "Cutie external rendering:"
+			<< "Screen:" << screen()->name()
+			<< "Screen geometry:" << screen()->geometry()
+			<< "Screen DPR:" << screen()->devicePixelRatio()
+			<< "Window size:" << size()
+			<< "Window DPR:" << devicePixelRatio()
+			<< "Framebuffer:" << viewport[2] << "x" << viewport[3]
+			<< "Wayland mode:" << m_output->currentMode().size()
+			<< "Wayland scale:" << m_output->scaleFactor();
+
+		m_externalRenderLogged = true;
+	}
 
 	functions->glClearColor(.0f, .0f, .0f, 1.f);
 	functions->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

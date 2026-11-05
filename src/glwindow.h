@@ -69,7 +69,8 @@ class GlWindow : public QOpenGLWindow {
 
 	QList<QEventPoint *> m_evPoint;
 	bool m_displayOff = false;
-
+    bool m_externalRenderLogged = false;
+	
 	CwlCompositor *m_cwlcompositor = nullptr;
 	CwlGesture *m_gesture = nullptr;
 };
