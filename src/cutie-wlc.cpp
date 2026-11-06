@@ -10,6 +10,7 @@
 #include <QWaylandPointer>
 #include <QWaylandTouch>
 #include <QTouchEvent>
+#include <QScreen>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 
@@ -57,7 +58,10 @@ CwlCompositor::~CwlCompositor()
 void CwlCompositor::create()
 {
 	m_output = new QWaylandOutput(this, m_glwindow);
-	QWaylandOutputMode mode(m_glwindow->size(), 60000);
+	qreal hz = m_glwindow->screen()->refreshRate();
+	qDebug() << "wlc - screen refresh rate:" << hz << "Hz";
+	QWaylandOutputMode mode(m_glwindow->size(),
+				hz >= 1.0 ? qRound(hz * 1000) : 60000);
 	m_output->addMode(mode, true);
 	QWaylandCompositor::create();
 	m_output->setCurrentMode(mode);
@@ -100,7 +104,8 @@ void CwlCompositor::create()
 		Might also be the hwcomposer issue https://doc.qt.io/qt-6/qtquick-visualcanvas-scenegraph.html
 	*/
 	qputenv("QSG_NO_VSYNC", QByteArray("1"));
-	qputenv("QSG_RENDER_LOOP", QByteArray("basic"));
+	qputenv("QSG_RENDER_LOOP", QByteArray("threaded"));
+	qDebug() << "wlc - render loop:" << qgetenv("QSG_RENDER_LOOP");
 
 	QStringList args = QStringList();
 	args.append("-c");
