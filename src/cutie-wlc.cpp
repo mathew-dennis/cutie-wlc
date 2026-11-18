@@ -14,9 +14,35 @@
 #include <QWaylandPointer>
 #include <QWaylandTouch>
 #include <QTouchEvent>
+#include <QAnimationDriver>
 #include <QOpenGLFramebufferObject>
 #include <QOpenGLTexture>
 #include <QDebug>
+
+/*
+	Advances compositor animations once per painted frame instead of on Qt's
+	default 16 ms timer, so they run at the display refresh rate.
+*/
+class FrameAnimationDriver : public QAnimationDriver
+{
+    public:
+	explicit FrameAnimationDriver(CwlCompositor *compositor)
+		: QAnimationDriver(compositor), m_compositor(compositor)
+	{
+	}
+
+    protected:
+	void start() override
+	{
+		QAnimationDriver::start();
+		m_compositor->triggerRender();
+	}
+
+    private:
+	CwlCompositor *m_compositor;
+};
+
+static FrameAnimationDriver *s_animDriver = nullptr;
 
 CwlCompositor::CwlCompositor(GlWindow *glwindow)
 	: m_glwindow(glwindow)
@@ -80,11 +106,14 @@ void CwlCompositor::create()
 	const qreal refreshRate = m_glwindow->screen() ?
 					  m_glwindow->screen()->refreshRate() :
 					  0.0;
+	qDebug() << "wlc - screen refresh rate:" << refreshRate << "Hz";
 	QWaylandOutputMode mode(m_glwindow->size(),
 				refreshRate > 0.0 ? qRound(refreshRate * 1000.0) :
 						    60000);
 	m_output->addMode(mode, true);
 	QWaylandCompositor::create();
+	s_animDriver = new FrameAnimationDriver(this);
+	s_animDriver->install();
 	m_output->setCurrentMode(mode);
 	m_output->setScaleFactor(m_scaleFactor);
 	m_glwindow->setOutput(m_output);
@@ -1339,6 +1368,10 @@ void CwlCompositor::onToplevelDamaged(CwlView *view)
 
 void CwlCompositor::startRender(QWaylandOutput *output)
 {
+	// One tick per phone frame; external windows must not advance it again
+	if (output == m_output && s_animDriver && s_animDriver->isRunning())
+		s_animDriver->advance();
+
 	if (output)
 		output->frameStarted();
 }
