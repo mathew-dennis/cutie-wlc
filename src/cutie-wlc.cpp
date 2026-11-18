@@ -458,8 +458,15 @@ CwlView *CwlCompositor::findTreeView(QWaylandSurface *s, CwlView *rootView)
 void CwlCompositor::onXdgToplevelCreated(QWaylandXdgToplevel *toplevel,
 					 QWaylandXdgSurface *xdgSurface)
 {
-	CwlView *view = new CwlView(this, m_workspace->availableGeometry());
-	view->setOutput(m_output);
+	// Apps we launched on a chosen screen start on that screen, so they are
+	// never registered on the phone output first
+	QWaylandOutput *launched = nullptr;
+	if (m_cutieshell && xdgSurface->surface()->client())
+		launched = m_cutieshell->outputForPid(
+			xdgSurface->surface()->client()->processId());
+	QWaylandOutput *startOutput = launched ? launched : m_output;
+	CwlView *view = new CwlView(this, outputGeometry(startOutput));
+	view->setOutput(startOutput);
 	view->setSurface(xdgSurface->surface());
 
 	view->setTopLevel(toplevel);
