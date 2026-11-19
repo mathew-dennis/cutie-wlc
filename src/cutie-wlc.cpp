@@ -14,7 +14,6 @@
 #include <QScreen>
 #include <QWaylandPointer>
 #include <QWaylandTouch>
-#include <QWaylandViewporter>
 #include <QTouchEvent>
 #include <QAnimationDriver>
 #include <QOpenGLFramebufferObject>
@@ -154,8 +153,9 @@ void CwlCompositor::create()
 	m_outputManager = new OutputManagerV1(this);
 	m_outputPowerManager = new OutputPowerManagerV1(this);
 	m_screencopyManager = new ScreencopyManagerV1(this);
-	// Qt clients only use fractional scale together with viewporter.
-	new QWaylandViewporter(this);
+	// wp_viewporter is deliberately not advertised: Waydroid then composites
+	// through subsurfaces, which are not rendered here. Without it Qt clients
+	// fall back to set_buffer_scale(ceil(scale)), exact for integer scales.
 	m_fractionalScaleManager = new FractionalScaleManagerV1(this);
 
 	m_created = true;
