@@ -25,6 +25,7 @@ class ScreencopyManagerV1;
 class ForeignToplevelManagerV1;
 class ForeignToplevelHandleV1;
 class InputMethodManagerV2;
+class FractionalScaleManagerV1;
 
 class CwlCompositor : public QWaylandCompositor {
 	Q_OBJECT
@@ -90,6 +91,7 @@ class CwlCompositor : public QWaylandCompositor {
 
 	int scaleFactor();
 	void setScaleFactor(int scale);
+	void setSurfaceScale(QWaylandSurface *surface, int scale);
 
 	CwlView *getTopPanel();
 	GlWindow *glWindow();
@@ -157,6 +159,7 @@ class CwlCompositor : public QWaylandCompositor {
 	CutieShell *m_cutieshell = nullptr;
 	OutputManagerV1 *m_outputManager = nullptr;
 	OutputPowerManagerV1 *m_outputPowerManager = nullptr;
+	FractionalScaleManagerV1 *m_fractionalScaleManager = nullptr;
 	ScreencopyManagerV1 *m_screencopyManager = nullptr;
 	ForeignToplevelManagerV1 *m_foreignTlManagerV1 = nullptr;
 	QWaylandOutput *m_output = nullptr;

@@ -363,6 +363,7 @@ void GlWindow::renderView(CwlView *view)
 		QPointF viewPosition = view->getPosition() - m_output->position();
 		auto surfaceOrigin = view->textureOrigin();
 		const int outputScale = qMax(1, m_output->scaleFactor());
+		m_cwlcompositor->setSurfaceScale(surface, outputScale);
 		QRectF targetRect(viewPosition * outputScale, viewSize * outputScale);
 
 		if (m_output != m_cwlcompositor->defaultOutput()) {

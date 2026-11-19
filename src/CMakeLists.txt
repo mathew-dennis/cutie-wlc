@@ -42,4 +42,5 @@ ${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/text-input-unstable-v3.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-foreign-toplevel-management-unstable-v1.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/input-method-unstable-v2.xml
+        ${CMAKE_CURRENT_SOURCE_DIR}/protocols/fractional-scale-v1.xml
 )

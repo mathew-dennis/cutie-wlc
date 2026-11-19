@@ -5,6 +5,7 @@
 #include <screencopy.h>
 #include <foreign-toplevel-management.h>
 #include <input-method-v2.h>
+#include <fractional-scale-v1.h>
 #include <decoration.h>
 
 #include <QtWaylandCompositor/QWaylandSeat>
@@ -13,6 +14,7 @@
 #include <QScreen>
 #include <QWaylandPointer>
 #include <QWaylandTouch>
+#include <QWaylandViewporter>
 #include <QTouchEvent>
 #include <QAnimationDriver>
 #include <QOpenGLFramebufferObject>
@@ -152,6 +154,9 @@ void CwlCompositor::create()
 	m_outputManager = new OutputManagerV1(this);
 	m_outputPowerManager = new OutputPowerManagerV1(this);
 	m_screencopyManager = new ScreencopyManagerV1(this);
+	// Qt clients only use fractional scale together with viewporter.
+	new QWaylandViewporter(this);
+	m_fractionalScaleManager = new FractionalScaleManagerV1(this);
 
 	m_created = true;
 	for (QScreen *screen : qGuiApp->screens())
@@ -468,6 +473,8 @@ void CwlCompositor::onXdgToplevelCreated(QWaylandXdgToplevel *toplevel,
 	CwlView *view = new CwlView(this, outputGeometry(startOutput));
 	view->setOutput(startOutput);
 	view->setSurface(xdgSurface->surface());
+	setSurfaceScale(xdgSurface->surface(),
+			qMax(1, startOutput->scaleFactor()));
 
 	view->setTopLevel(toplevel);
 
@@ -573,6 +580,7 @@ void CwlCompositor::onLayerShellSurfaceCreated(LayerSurfaceV1 *layerSurface)
 	CwlView *view = new CwlView(this, outputGeometry(output));
 	view->setOutput(output);
 	view->setSurface(layerSurface->surface);
+	setSurfaceScale(layerSurface->surface, qMax(1, output->scaleFactor()));
 
 	view->setLayerSurface(layerSurface);
 	view->setPosition(QPoint(0, 0));
@@ -1392,6 +1400,12 @@ void CwlCompositor::endRender(QWaylandOutput *output)
 int CwlCompositor::scaleFactor()
 {
 	return m_scaleFactor;
+}
+
+void CwlCompositor::setSurfaceScale(QWaylandSurface *surface, int scale)
+{
+	if (m_fractionalScaleManager)
+		m_fractionalScaleManager->setSurfaceScale(surface, scale);
 }
 
 void CwlCompositor::setScaleFactor(int scale)
