@@ -186,6 +186,8 @@ void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_activate(
 void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_close(
 	Resource *resource)
 {
+	m_view->getTopLevel()->sendClose();m_view->getTopLevel()->sendClose();
+	
 	// Waydroid runs as an LXC container and keeps its Wayland client connection /
 	// wl_surface alive even when its window is closed. Stopping the session forces
 	// a clean container teardown so cutie-wlc destroys the view and allows reopening.
@@ -193,7 +195,6 @@ void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_close(
 		QProcess::startDetached("waydroid", QStringList() << "session" << "stop");
 	}
 
-	m_view->getTopLevel()->sendClose();
 }
 
 void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_set_rectangle(
