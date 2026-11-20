@@ -1,5 +1,6 @@
 #include <foreign-toplevel-management.h>
 #include <QtWaylandCompositor/QWaylandSeat>
+#include <QProcess>
 
 ForeignToplevelManagerV1::ForeignToplevelManagerV1(CwlCompositor *compositor)
 	: QWaylandCompositorExtensionTemplate(compositor)
@@ -185,6 +186,13 @@ void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_activate(
 void ForeignToplevelHandleV1::zwlr_foreign_toplevel_handle_v1_close(
 	Resource *resource)
 {
+	// Waydroid runs as an LXC container and keeps its Wayland client connection /
+	// wl_surface alive even when its window is closed. Stopping the session forces
+	// a clean container teardown so cutie-wlc destroys the view and allows reopening.
+	if (m_view && m_view->getAppId().contains("waydroid", Qt::CaseInsensitive)) {
+		QProcess::startDetached("waydroid", QStringList() << "session" << "stop");
+	}
+
 	m_view->getTopLevel()->sendClose();
 }
 
