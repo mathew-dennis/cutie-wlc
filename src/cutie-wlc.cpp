@@ -371,10 +371,13 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 			view->setDesktopOutput(m_output, outputGeometry(m_output));
 			view->onLayerSurfaceDataChanged(layerSurface);
 		}
-		// Safety net: nothing may keep pointing at the output we delete.
-		for (CwlView *view : m_workspace->getAllViews())
-			if (view->output() == output)
-				view->setOutput(m_output);
+		// Nothing may keep pointing at the output we are about to delete.
+		// Walk the views Qt itself attached to it, so popups, subsurfaces
+		// and untracked views are covered too.
+		for (QWaylandSurface *surface : output->surfaces())
+			for (QWaylandView *view : surface->views())
+				if (view->output() == output)
+					view->setOutput(m_output);
 	}
 	if (output)
 		output->deleteLater();
@@ -627,6 +630,9 @@ CwlView *CwlCompositor::getTopPanel()
 
 void CwlCompositor::raise(CwlView *view)
 {
+	// e.g. a home swipe while the home client is not running
+	if (!view)
+		return;
 	if (view->output() != m_output) {
 		raiseWindow(view);
 		return;
@@ -959,6 +965,10 @@ void CwlCompositor::viewSurfaceDestroyed()
 		m_decorationPress = DecorationHit();
 	if (m_lastTitleClickView == view)
 		m_lastTitleClickView = nullptr;
+	if (m_homeView == view)
+		m_homeView = nullptr;
+	if (m_panelView == view)
+		m_panelView = nullptr;
 
 	if (parent != nullptr) {
 		if (!view->isPopup())
@@ -1461,7 +1471,6 @@ void CwlCompositor::setLauncherPosition(double position)
 		emit launcherPositionChanged(m_launcherPosition);
 		return;
 	}
-	
 	QPointF newPos = m_launcherView->getPosition();
 	newPos.setY((1.0 - m_launcherPosition) *
 			    m_workspace->outputGeometry().height() +
