@@ -49,6 +49,7 @@ class CwlView : public QWaylandView {
 	~CwlView() override;
 
 	QOpenGLTexture *getTexture();
+	void invalidateTexture();
 	QOpenGLTextureBlitter::Origin textureOrigin();
 	QPointF getPosition();
 	void setPosition(const QPointF &pos);
