@@ -363,8 +363,10 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 	if (output) {
 		routeExistingViews(output, m_output);
 		// External layer surfaces (e.g. cutie-home-external) belong to the
-		// removed screen; close them and detach their views instead of
-		// moving them onto the phone screen on top of cutie-home.
+		// removed screen; remove them from the workspace and detach their
+		// views instead of moving them onto the phone screen. Do not call
+		// send_closed() here: LayerShellQt and the client's QScreen::screenRemoved
+		// handler both try to close/delete the window and can race.
 		const QList<CwlView *> allViews = m_workspace->getAllViews();
 		for (CwlView *view : allViews) {
 			LayerSurfaceV1 *layerSurface = view->getLayerSurface();
@@ -373,7 +375,6 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 			m_workspace->removeView(view);
 			view->setOutput(nullptr);
 			layerSurface->output = nullptr;
-			layerSurface->send_closed();
 		}
 		m_workspace->updateViewList();
 		// Nothing may keep pointing at the output we are about to delete.
@@ -387,6 +388,10 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 		output->deleteLater();
 	if (window)
 		window->deleteLater();
+	// Re-activate the primary window so QGuiApplication::focusWindow() returns
+	// to m_glwindow after the external window is hidden/destroyed; otherwise
+	// evdev keyboard events (Power, Volume, etc.) are dropped by Qt.
+	m_glwindow->requestActivate();
 	triggerRender();
 }
 
