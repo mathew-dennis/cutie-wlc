@@ -23,25 +23,47 @@ CwlView::~CwlView()
 
 QOpenGLTexture *CwlView::getTexture()
 {
-	if (advance()) {
-		QWaylandBufferRef bufRef = currentBuffer();
-		if (bufRef.origin() == QWaylandSurface::OriginTopLeft)
-			m_origin = QOpenGLTextureBlitter::OriginTopLeft;
-		else
-			m_origin = QOpenGLTextureBlitter::OriginBottomLeft;
+	const bool updated = advance();
+	QWaylandBufferRef bufRef = currentBuffer();
+	if (!bufRef.hasBuffer()) {
+		if (m_isImageBuffer) {
+			delete m_texture;
+			m_isImageBuffer = false;
+		}
+		m_texture = nullptr;
+		return nullptr;
+	}
+	if (bufRef.origin() == QWaylandSurface::OriginTopLeft)
+		m_origin = QOpenGLTextureBlitter::OriginTopLeft;
+	else
+		m_origin = QOpenGLTextureBlitter::OriginBottomLeft;
 
-		if (bufRef.bufferType() ==
-		    QWaylandBufferRef::BufferType::BufferType_Egl) {
-			m_texture = bufRef.toOpenGLTexture();
-		} else if (bufRef.bufferType() ==
-			   QWaylandBufferRef::BufferType::
-				   BufferType_SharedMemory) {
+	if (bufRef.bufferType() ==
+	    QWaylandBufferRef::BufferType::BufferType_Egl) {
+		if (m_isImageBuffer) {
+			delete m_texture;
+			m_isImageBuffer = false;
+		}
+		// Never cache an EGL texture pointer across frames: its lifetime is
+		// owned by QtWayland's currentBuffer() and can be freed when a
+		// buffer is released or its client disconnects.
+		m_texture = bufRef.toOpenGLTexture();
+	} else if (bufRef.bufferType() ==
+		   QWaylandBufferRef::BufferType::
+			   BufferType_SharedMemory) {
+		if (updated || !m_isImageBuffer || !m_texture) {
 			m_isImageBuffer = true;
 			delete m_texture;
 			m_texture = new QOpenGLTexture(bufRef.image());
 		}
 	}
 	return m_texture;
+}
+
+void CwlView::invalidateTexture()
+{
+	if (!m_isImageBuffer)
+		m_texture = nullptr;
 }
 
 QOpenGLTextureBlitter::Origin CwlView::textureOrigin()
