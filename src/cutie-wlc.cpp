@@ -372,12 +372,11 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 			view->onLayerSurfaceDataChanged(layerSurface);
 		}
 		// Nothing may keep pointing at the output we are about to delete.
-		// Walk the views Qt itself attached to it, so popups, subsurfaces
-		// and untracked views are covered too.
-		for (QWaylandSurface *surface : output->surfaces())
-			for (QWaylandView *view : surface->views())
-				if (view->output() == output)
-					view->setOutput(m_output);
+		// Walk every CwlView owned by the compositor, so popups, subsurfaces
+		// and views not yet registered in the workspace are covered too.
+		for (CwlView *view : findChildren<CwlView *>(Qt::FindDirectChildrenOnly))
+			if (view->output() == output)
+				view->setOutput(m_output);
 	}
 	if (output)
 		output->deleteLater();
