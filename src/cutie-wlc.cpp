@@ -1457,10 +1457,6 @@ void CwlCompositor::setLauncherPosition(double position)
 	if (m_launcherPosition == position)
 		return;
 	m_launcherPosition = position;
-	if (!m_launcherView) {
-		emit launcherPositionChanged(m_launcherPosition);
-		return;
-	}
 	QPointF newPos = m_launcherView->getPosition();
 	newPos.setY((1.0 - m_launcherPosition) *
 			    m_workspace->outputGeometry().height() +
