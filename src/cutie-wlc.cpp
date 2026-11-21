@@ -376,12 +376,12 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 			if (view->output() == output)
 				view->setOutput(m_output);
 	}
-	// Not deleted synchronously: we are inside Qt's screenRemoved signal and
-	// the platform may still be using the window and its GL context.
 	if (output)
 		output->deleteLater();
-	if (window)
-		window->deleteLater();
+	// The window is intentionally NOT deleted. Destroying its native window
+	// after the screen is gone crashes the hwcomposer platform plugin
+	// (HwComposerBackend_v20::destroyWindow). It stays hidden and detached
+	// from any output; the leak is one small object per unplug.
 	triggerRender();
 }
 
@@ -1457,6 +1457,10 @@ void CwlCompositor::setLauncherPosition(double position)
 	if (m_launcherPosition == position)
 		return;
 	m_launcherPosition = position;
+	if (!m_launcherView) {
+		emit launcherPositionChanged(m_launcherPosition);
+		return;
+	}
 	QPointF newPos = m_launcherView->getPosition();
 	newPos.setY((1.0 - m_launcherPosition) *
 			    m_workspace->outputGeometry().height() +
