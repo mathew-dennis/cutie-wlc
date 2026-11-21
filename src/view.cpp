@@ -8,6 +8,7 @@ CwlView::CwlView(CwlCompositor *cwlcompositor, QRect geometry)
 	: m_cwlcompositor(cwlcompositor)
 	, m_availableGeometry(geometry)
 {
+	setParent(cwlcompositor);
 	connect(this, &CwlView::surfaceChanged, this,
 		&CwlView::onSurfaceChanged);
 }
@@ -112,10 +113,8 @@ void CwlView::applyAvailableGeometry(const QRect &geometry)
 	if (layer == TOP) {
 		if (isToplevel()) {
 			applyWindowMode();
-		} else if (m_toplevel->xdgSurface()->popup()) {
-			setPosition(m_toplevel->xdgSurface()
-					    ->popup()
-					    ->unconstrainedPosition() +
+		} else if (m_xdgPopup) {
+			setPosition(m_xdgPopup->unconstrainedPosition() +
 				    geometry.topLeft());
 		}
 	}
@@ -315,11 +314,14 @@ void CwlView::onAppIdChanged()
 		m_cwlcompositor->setLauncherPosition(0.0);
 	} else {
 		layer = TOP;
-		if (m_toplevel->parentToplevel()) {
-			CwlView *parent_view = m_cwlcompositor->findTlView(
-				m_toplevel->parentToplevel()
-					->xdgSurface()
-					->surface());
+		CwlView *parent_view =
+			m_toplevel->parentToplevel() ?
+				m_cwlcompositor->findTlView(
+					m_toplevel->parentToplevel()
+						->xdgSurface()
+						->surface()) :
+				nullptr;
+		if (parent_view) {
 			parent_view->addChildView(this);
 			this->setParentView(parent_view);
 			if (isWindowedOutput()) {
