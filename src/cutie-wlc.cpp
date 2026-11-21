@@ -362,28 +362,31 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 
 	if (output) {
 		routeExistingViews(output, m_output);
-		m_workspace->updateViewList();
-		for (CwlView *view : m_workspace->getAllViews()) {
+		// External layer surfaces (e.g. cutie-home-external) belong to the
+		// removed screen; close them and detach their views instead of
+		// moving them onto the phone screen on top of cutie-home.
+		const QList<CwlView *> allViews = m_workspace->getAllViews();
+		for (CwlView *view : allViews) {
 			LayerSurfaceV1 *layerSurface = view->getLayerSurface();
 			if (view->output() != output || !layerSurface)
 				continue;
-			layerSurface->output = m_output;
-			view->setDesktopOutput(m_output, outputGeometry(m_output));
-			view->onLayerSurfaceDataChanged(layerSurface);
+			m_workspace->removeView(view);
+			view->setOutput(nullptr);
+			layerSurface->output = nullptr;
+			layerSurface->send_closed();
 		}
+		m_workspace->updateViewList();
 		// Nothing may keep pointing at the output we are about to delete.
 		// Walk every CwlView owned by the compositor, so popups, subsurfaces
 		// and views not yet registered in the workspace are covered too.
 		for (CwlView *view : findChildren<CwlView *>(Qt::FindDirectChildrenOnly))
 			if (view->output() == output)
-				view->setOutput(m_output);
+				view->setOutput(view->getLayerSurface() ? nullptr : m_output);
 	}
 	if (output)
 		output->deleteLater();
-	// The window is intentionally NOT deleted. Destroying its native window
-	// after the screen is gone crashes the hwcomposer platform plugin
-	// (HwComposerBackend_v20::destroyWindow). It stays hidden and detached
-	// from any output; the leak is one small object per unplug.
+	if (window)
+		window->deleteLater();
 	triggerRender();
 }
 
