@@ -353,6 +353,13 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 	m_decorationPress = DecorationHit();
 	m_hoverView = nullptr;
 
+	// Stop painting and input on the dying window before touching anything
+	// else; Qt may still have events queued for it.
+	if (window) {
+		window->setOutput(nullptr);
+		window->hide();
+	}
+
 	if (output) {
 		routeExistingViews(output, m_output);
 		m_workspace->updateViewList();
@@ -364,11 +371,17 @@ void CwlCompositor::onScreenRemoved(QScreen *screen)
 			view->setDesktopOutput(m_output, outputGeometry(m_output));
 			view->onLayerSurfaceDataChanged(layerSurface);
 		}
+		// Safety net: nothing may keep pointing at the output we delete.
+		for (CwlView *view : m_workspace->getAllViews())
+			if (view->output() == output)
+				view->setOutput(m_output);
 	}
+	// Not deleted synchronously: we are inside Qt's screenRemoved signal and
+	// the platform may still be using the window and its GL context.
+	if (output)
+		output->deleteLater();
 	if (window)
-		window->setOutput(nullptr);
-	delete output;
-	delete window;
+		window->deleteLater();
 	triggerRender();
 }
 
@@ -438,26 +451,24 @@ CwlView *CwlCompositor::findView(QWaylandSurface *s)
 
 CwlView *CwlCompositor::findTlView(QWaylandSurface *s)
 {
-	CwlView *ret = nullptr;
 	for (CwlView *view : m_workspace->getToplevelViews()) {
 		if (view->surface() == s)
-			ret = view;
-		else if (view->getChildViews().size() > 0)
-			ret = findTreeView(s, view);
+			return view;
+		if (CwlView *child = findTreeView(s, view))
+			return child;
 	}
-	return ret;
+	return nullptr;
 }
 
 CwlView *CwlCompositor::findTreeView(QWaylandSurface *s, CwlView *rootView)
 {
-	CwlView *ret = nullptr;
 	for (CwlView *childView : rootView->getChildViews()) {
 		if (childView->surface() == s)
-			ret = childView;
-		else if (childView->getChildViews().size() > 0)
-			ret = findTreeView(s, childView);
+			return childView;
+		if (CwlView *child = findTreeView(s, childView))
+			return child;
 	}
-	return ret;
+	return nullptr;
 }
 
 void CwlCompositor::onXdgToplevelCreated(QWaylandXdgToplevel *toplevel,
@@ -551,7 +562,7 @@ void CwlCompositor::onXdgPopupCreated(QWaylandXdgPopup *popup,
 	qDebug() << "Popup " << (uint64_t)view << " created";
 
 	view->setPosition(popup->unconstrainedPosition() +
-			  parent_view->getPosition());
+			  (parent_view ? parent_view->getPosition() : QPointF()));
 
 	view->layer = TOP;
 	if (parent_view) {
