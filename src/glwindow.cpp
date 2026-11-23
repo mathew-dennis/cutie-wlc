@@ -366,23 +366,6 @@ void GlWindow::renderView(CwlView *view)
 		m_cwlcompositor->setSurfaceScale(surface, outputScale);
 		QRectF targetRect(viewPosition * outputScale, viewSize * outputScale);
 
-		if (m_output != m_cwlcompositor->defaultOutput()) {
-			static QSet<QString> seen;
-			const QSize buf = surface->bufferSize();
-			const QString key = QString("%1 wl_surface#%2 buf %3x%4 bufScale %5 dest %6x%7 -> target %8x%9")
-				.arg(view->getAppId())
-				.arg(wl_resource_get_id(surface->resource()))
-				.arg(buf.width()).arg(buf.height())
-				.arg(surface->bufferScale())
-				.arg(viewSize.width()).arg(viewSize.height())
-				.arg(qRound(targetRect.width()))
-				.arg(qRound(targetRect.height()));
-			if (!seen.contains(key)) {
-				seen.insert(key);
-				qInfo() << "Cutie view blit:" << key;
-			}
-		}
-
 		QMatrix4x4 targetTransform =
 			QOpenGLTextureBlitter::targetTransform(
 				targetRect, QRect(QPoint(), size()));

@@ -42,12 +42,14 @@ QOpenGLTexture *CwlView::getTexture()
 	    QWaylandBufferRef::BufferType::BufferType_Egl) {
 		if (m_isImageBuffer) {
 			delete m_texture;
+			m_texture = nullptr;
 			m_isImageBuffer = false;
 		}
-		// Never cache an EGL texture pointer across frames: its lifetime is
-		// owned by QtWayland's currentBuffer() and can be freed when a
-		// buffer is released or its client disconnects.
-		m_texture = bufRef.toOpenGLTexture();
+		// The EGL texture is owned by QtWayland's currentBuffer(). Only
+		// advance() (called above, nowhere else) replaces that buffer, so
+		// refetch the pointer when it reports a new one.
+		if (updated || !m_texture)
+			m_texture = bufRef.toOpenGLTexture();
 	} else if (bufRef.bufferType() ==
 		   QWaylandBufferRef::BufferType::
 			   BufferType_SharedMemory) {
@@ -478,7 +480,7 @@ void CwlView::onDestinationSizeChanged()
 
 void CwlView::onRedraw()
 {
-	m_cwlcompositor->triggerRender();
+	m_cwlcompositor->triggerRender(output());
 	if (isToplevel())
 		;
 	m_cwlcompositor->onToplevelDamaged(this);

@@ -131,6 +131,7 @@ class CwlCompositor : public QWaylandCompositor {
 
     public slots:
 	void triggerRender();
+	void triggerRender(QWaylandOutput *output);
 	void onScreenAdded(QScreen *screen);
 	void onScreenRemoved(QScreen *screen);
 	void onToplevelDamaged(CwlView *view);

@@ -1396,9 +1396,22 @@ bool CwlCompositor::decorationRelease(const QPointF &position,
 
 void CwlCompositor::triggerRender()
 {
-	m_glwindow->requestUpdate();
+	if (!m_glwindow->displayOff())
+		m_glwindow->requestUpdate();
 	for (GlWindow *window : m_externalWindows)
 		window->requestUpdate();
+}
+
+void CwlCompositor::triggerRender(QWaylandOutput *output)
+{
+	QWindow *window = output ? output->window() : nullptr;
+	if (!window) {
+		triggerRender();
+		return;
+	}
+	if (window == m_glwindow && m_glwindow->displayOff())
+		return;
+	window->requestUpdate();
 }
 
 void CwlCompositor::onToplevelDamaged(CwlView *view)

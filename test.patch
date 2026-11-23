@@ -1,24 +1,94 @@
-diff --git a/src/cutie-wlc.cpp b/src/cutie-wlc.cpp
-index 619b51f..a8033d4 100644
 --- a/src/cutie-wlc.cpp
 +++ b/src/cutie-wlc.cpp
-@@ -14,7 +14,6 @@
- #include <QScreen>
- #include <QWaylandPointer>
- #include <QWaylandTouch>
--#include <QWaylandViewporter>
- #include <QTouchEvent>
- #include <QAnimationDriver>
- #include <QOpenGLFramebufferObject>
-@@ -154,8 +153,9 @@ void CwlCompositor::create()
- 	m_outputManager = new OutputManagerV1(this);
- 	m_outputPowerManager = new OutputPowerManagerV1(this);
- 	m_screencopyManager = new ScreencopyManagerV1(this);
--	// Qt clients only use fractional scale together with viewporter.
--	new QWaylandViewporter(this);
-+	// wp_viewporter is deliberately not advertised: Waydroid then composites
-+	// through subsurfaces, which are not rendered here. Without it Qt clients
-+	// fall back to set_buffer_scale(ceil(scale)), exact for integer scales.
- 	m_fractionalScaleManager = new FractionalScaleManagerV1(this);
+@@ -1396,11 +1396,24 @@
  
- 	m_created = true;
+ void CwlCompositor::triggerRender()
+ {
+-	m_glwindow->requestUpdate();
++	if (!m_glwindow->displayOff())
++		m_glwindow->requestUpdate();
+ 	for (GlWindow *window : m_externalWindows)
+ 		window->requestUpdate();
+ }
+ 
++void CwlCompositor::triggerRender(QWaylandOutput *output)
++{
++	QWindow *window = output ? output->window() : nullptr;
++	if (!window) {
++		triggerRender();
++		return;
++	}
++	if (window == m_glwindow && m_glwindow->displayOff())
++		return;
++	window->requestUpdate();
++}
++
+ void CwlCompositor::onToplevelDamaged(CwlView *view)
+ {
+ 	if (!m_homeOpen)
+--- a/src/cutie-wlc.h
++++ b/src/cutie-wlc.h
+@@ -131,6 +131,7 @@
+ 
+     public slots:
+ 	void triggerRender();
++	void triggerRender(QWaylandOutput *output);
+ 	void onScreenAdded(QScreen *screen);
+ 	void onScreenRemoved(QScreen *screen);
+ 	void onToplevelDamaged(CwlView *view);
+--- a/src/view.cpp
++++ b/src/view.cpp
+@@ -42,12 +42,14 @@
+ 	    QWaylandBufferRef::BufferType::BufferType_Egl) {
+ 		if (m_isImageBuffer) {
+ 			delete m_texture;
++			m_texture = nullptr;
+ 			m_isImageBuffer = false;
+ 		}
+-		// Never cache an EGL texture pointer across frames: its lifetime is
+-		// owned by QtWayland's currentBuffer() and can be freed when a
+-		// buffer is released or its client disconnects.
+-		m_texture = bufRef.toOpenGLTexture();
++		// The EGL texture is owned by QtWayland's currentBuffer(). Only
++		// advance() (called above, nowhere else) replaces that buffer, so
++		// refetch the pointer when it reports a new one.
++		if (updated || !m_texture)
++			m_texture = bufRef.toOpenGLTexture();
+ 	} else if (bufRef.bufferType() ==
+ 		   QWaylandBufferRef::BufferType::
+ 			   BufferType_SharedMemory) {
+@@ -478,7 +480,7 @@
+ 
+ void CwlView::onRedraw()
+ {
+-	m_cwlcompositor->triggerRender();
++	m_cwlcompositor->triggerRender(output());
+ 	if (isToplevel())
+ 		;
+ 	m_cwlcompositor->onToplevelDamaged(this);
+--- a/src/glwindow.cpp
++++ b/src/glwindow.cpp
+@@ -366,23 +366,6 @@
+ 		m_cwlcompositor->setSurfaceScale(surface, outputScale);
+ 		QRectF targetRect(viewPosition * outputScale, viewSize * outputScale);
+ 
+-		if (m_output != m_cwlcompositor->defaultOutput()) {
+-			static QSet<QString> seen;
+-			const QSize buf = surface->bufferSize();
+-			const QString key = QString("%1 wl_surface#%2 buf %3x%4 bufScale %5 dest %6x%7 -> target %8x%9")
+-				.arg(view->getAppId())
+-				.arg(wl_resource_get_id(surface->resource()))
+-				.arg(buf.width()).arg(buf.height())
+-				.arg(surface->bufferScale())
+-				.arg(viewSize.width()).arg(viewSize.height())
+-				.arg(qRound(targetRect.width()))
+-				.arg(qRound(targetRect.height()));
+-			if (!seen.contains(key)) {
+-				seen.insert(key);
+-				qInfo() << "Cutie view blit:" << key;
+-			}
+-		}
+-
+ 		QMatrix4x4 targetTransform =
+ 			QOpenGLTextureBlitter::targetTransform(
+ 				targetRect, QRect(QPoint(), size()));
