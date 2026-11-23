@@ -5,7 +5,7 @@ set(CMAKE_AUTOMOC ON)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui WaylandCompositor)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui DBus WaylandCompositor)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
 pkg_get_variable(WAYLAND_PROTOCOLS_DATADIR wayland-protocols pkgdatadir)
@@ -17,6 +17,6 @@ add_subdirectory(src)
 target_include_directories(${PROJECT_NAME} PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::WaylandCompositor)
+target_link_libraries(${PROJECT_NAME} PUBLIC Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::DBus Qt6::WaylandCompositor)
 
 install(TARGETS ${PROJECT_NAME} DESTINATION /usr/bin)

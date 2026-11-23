@@ -9,6 +9,9 @@
 #include <QGuiApplication>
 #include <QDebug>
 #include <QSet>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusPendingCall>
 #include <wayland-server-core.h>
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qplatformscreen.h>
@@ -62,6 +65,15 @@ void GlWindow::setDisplayOff(bool displayOff)
 		requestUpdate();
 
 	m_displayOff = displayOff;
+
+	QDBusMessage msg = QDBusMessage::createMethodCall(
+		QStringLiteral("org.freedesktop.login1"),
+		QStringLiteral("/org/freedesktop/login1/session/auto"),
+		QStringLiteral("org.freedesktop.login1.Session"),
+		QStringLiteral("SetIdleHint"));
+	msg << m_displayOff;
+	QDBusConnection::systemBus().asyncCall(msg);
+
 	emit displayOffChanged(m_displayOff);
 }
 
