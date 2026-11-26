@@ -20,6 +20,10 @@ class GlWindow : public QOpenGLWindow {
 	QWaylandOutput *output() const;
 	bool displayOff();
 	void setDisplayOff(bool displayOff);
+	bool supportsBackgroundBlur() const
+	{
+		return m_backgroundBlur && m_backgroundBlur->isValid();
+	}
 	inline CwlGesture *gesture()
 	{
 		return m_gesture;
@@ -44,6 +48,7 @@ class GlWindow : public QOpenGLWindow {
 	void renderView(CwlView *view);
 	void renderCursor();
 	void renderBackgroundBlur(const QRectF &target);
+	void setViewOpacity(double opacity);
 	void renderTitleBar(CwlView *view);
 	void renderBorder(CwlView *view, bool active);
 	bool ownsPointer(QWaylandOutput *output) const;
@@ -55,6 +60,8 @@ class GlWindow : public QOpenGLWindow {
 	QWaylandOutput *m_output = nullptr;
 	GLenum m_currentTarget;
 	BackgroundBlur *m_backgroundBlur = nullptr;
+	// Opacity the current view is drawn with
+	double m_viewOpacity = 1.0;
 	QOpenGLTexture *m_wallpaper = nullptr;
 	QOpenGLTexture *m_fallbackCursor = nullptr;
 	QOpenGLTexture *m_shapeCursors[6] = {};

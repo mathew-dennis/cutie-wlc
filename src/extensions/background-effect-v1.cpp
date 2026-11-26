@@ -1,4 +1,5 @@
 #include <background-effect-v1.h>
+#include <glwindow.h>
 
 BackgroundEffectManagerV1::BackgroundEffectManagerV1(CwlCompositor *compositor)
 	: QWaylandCompositorExtensionTemplate(compositor)
@@ -21,8 +22,11 @@ bool BackgroundEffectManagerV1::hasBlur(QWaylandSurface *surface) const
 void BackgroundEffectManagerV1::ext_background_effect_manager_v1_bind_resource(
 	Resource *resource)
 {
-	// Blur is always on offer, GlWindow decides whether it can draw it.
-	send_capabilities(resource->handle, capability_blur);
+	// Only offered when GlWindow could set up the blur
+	send_capabilities(resource->handle,
+			  m_compositor->glWindow()->supportsBackgroundBlur() ?
+				  capability_blur :
+				  0);
 }
 
 void BackgroundEffectManagerV1::ext_background_effect_manager_v1_destroy(
@@ -67,12 +71,11 @@ BackgroundEffectSurfaceV1::BackgroundEffectSurfaceV1(
 		&BackgroundEffectSurfaceV1::onCommit);
 }
 
+// The commit that applies this also makes the compositor redraw the surface
+// (CwlView::onRedraw), so nothing has to ask for a frame here.
 void BackgroundEffectSurfaceV1::onCommit()
 {
-	if (m_blur == m_pendingBlur)
-		return;
 	m_blur = m_pendingBlur;
-	m_manager->m_compositor->triggerRender();
 }
 
 void BackgroundEffectSurfaceV1::detach()

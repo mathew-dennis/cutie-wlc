@@ -1,94 +1,203 @@
---- a/src/cutie-wlc.cpp
-+++ b/src/cutie-wlc.cpp
-@@ -1396,11 +1396,24 @@
+diff --git a/src/blur.cpp b/src/blur.cpp
+index 4374f21..c9002d0 100644
+--- a/src/blur.cpp
++++ b/src/blur.cpp
+@@ -8,6 +8,8 @@
+ // How far each pass reaches, in texels. More blurs wider, too much shows as
+ // dots. 1 is the plain dual Kawase filter.
+ static const float OFFSET = 2.0f;
++// Lets tile based GPUs skip loading the old pixels of a level
++static const GLenum DISCARD = GL_COLOR_ATTACHMENT0;
  
- void CwlCompositor::triggerRender()
- {
--	m_glwindow->requestUpdate();
-+	if (!m_glwindow->displayOff())
-+		m_glwindow->requestUpdate();
- 	for (GlWindow *window : m_externalWindows)
- 		window->requestUpdate();
+ // One triangle that covers the whole viewport; uv goes from 0 to 1 over it.
+ // clang-format off
+@@ -123,10 +125,21 @@
+ 	qDeleteAll(m_levels);
+ 	m_levels.clear();
+ 	for (int i = 0; i < LEVELS; ++i) {
++		// Rounded up like the areas in blur(), or a full screen blur
++		// would not fit when the size is not a multiple of 8
+ 		const int shift = i + 1;
+-		m_levels << new QOpenGLFramebufferObject(
+-			QSize(qMax(1, framebufferSize.width() >> shift),
+-			      qMax(1, framebufferSize.height() >> shift)));
++		const int round = (1 << shift) - 1;
++		QOpenGLFramebufferObject *level = new QOpenGLFramebufferObject(
++			QSize(qMax(1, (framebufferSize.width() + round) >> shift),
++			      qMax(1, (framebufferSize.height() + round) >>
++					      shift)));
++		// Qt makes these textures GL_NEAREST, the filters need linear
++		m_gl.glBindTexture(GL_TEXTURE_2D, level->texture());
++		m_gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
++				     GL_LINEAR);
++		m_gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
++				     GL_LINEAR);
++		m_levels << level;
+ 	}
  }
  
-+void CwlCompositor::triggerRender(QWaylandOutput *output)
-+{
-+	QWindow *window = output ? output->window() : nullptr;
-+	if (!window) {
-+		triggerRender();
-+		return;
+@@ -137,6 +150,7 @@
+ 	const QSize fromSize = m_levels[from]->size();
+ 
+ 	m_levels[to]->bind();
++	m_gl.glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 1, &DISCARD);
+ 	m_gl.glViewport(0, 0, toArea.width(), toArea.height());
+ 
+ 	program.bind();
+@@ -177,6 +191,7 @@
+ 		GL_READ_FRAMEBUFFER,
+ 		QOpenGLContext::currentContext()->defaultFramebufferObject());
+ 	m_gl.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_levels[0]->handle());
++	m_gl.glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 1, &DISCARD);
+ 	m_gl.glBlitFramebuffer(region.left(), bottom,
+ 			       region.left() + region.width(),
+ 			       bottom + region.height(), 0, 0, areas[0].width(),
+diff --git a/src/extensions/background-effect-v1.cpp b/src/extensions/background-effect-v1.cpp
+index 0acb352..ede1c1f 100644
+--- a/src/extensions/background-effect-v1.cpp
++++ b/src/extensions/background-effect-v1.cpp
+@@ -1,4 +1,5 @@
+ #include <background-effect-v1.h>
++#include <glwindow.h>
+ 
+ BackgroundEffectManagerV1::BackgroundEffectManagerV1(CwlCompositor *compositor)
+ 	: QWaylandCompositorExtensionTemplate(compositor)
+@@ -21,8 +22,11 @@
+ void BackgroundEffectManagerV1::ext_background_effect_manager_v1_bind_resource(
+ 	Resource *resource)
+ {
+-	// Blur is always on offer, GlWindow decides whether it can draw it.
+-	send_capabilities(resource->handle, capability_blur);
++	// Only offered when GlWindow could set up the blur
++	send_capabilities(resource->handle,
++			  m_compositor->glWindow()->supportsBackgroundBlur() ?
++				  capability_blur :
++				  0);
+ }
+ 
+ void BackgroundEffectManagerV1::ext_background_effect_manager_v1_destroy(
+@@ -67,12 +71,11 @@
+ 		&BackgroundEffectSurfaceV1::onCommit);
+ }
+ 
++// The commit that applies this also makes the compositor redraw the surface
++// (CwlView::onRedraw), so nothing has to ask for a frame here.
+ void BackgroundEffectSurfaceV1::onCommit()
+ {
+-	if (m_blur == m_pendingBlur)
+-		return;
+ 	m_blur = m_pendingBlur;
+-	m_manager->m_compositor->triggerRender();
+ }
+ 
+ void BackgroundEffectSurfaceV1::detach()
+diff --git a/src/glwindow.h b/src/glwindow.h
+index cf1b082..6135a49 100644
+--- a/src/glwindow.h
++++ b/src/glwindow.h
+@@ -20,6 +20,10 @@
+ 	QWaylandOutput *output() const;
+ 	bool displayOff();
+ 	void setDisplayOff(bool displayOff);
++	bool supportsBackgroundBlur() const
++	{
++		return m_backgroundBlur && m_backgroundBlur->isValid();
 +	}
-+	if (window == m_glwindow && m_glwindow->displayOff())
-+		return;
-+	window->requestUpdate();
-+}
-+
- void CwlCompositor::onToplevelDamaged(CwlView *view)
- {
- 	if (!m_homeOpen)
---- a/src/cutie-wlc.h
-+++ b/src/cutie-wlc.h
-@@ -131,6 +131,7 @@
- 
-     public slots:
- 	void triggerRender();
-+	void triggerRender(QWaylandOutput *output);
- 	void onScreenAdded(QScreen *screen);
- 	void onScreenRemoved(QScreen *screen);
- 	void onToplevelDamaged(CwlView *view);
---- a/src/view.cpp
-+++ b/src/view.cpp
-@@ -42,12 +42,14 @@
- 	    QWaylandBufferRef::BufferType::BufferType_Egl) {
- 		if (m_isImageBuffer) {
- 			delete m_texture;
-+			m_texture = nullptr;
- 			m_isImageBuffer = false;
- 		}
--		// Never cache an EGL texture pointer across frames: its lifetime is
--		// owned by QtWayland's currentBuffer() and can be freed when a
--		// buffer is released or its client disconnects.
--		m_texture = bufRef.toOpenGLTexture();
-+		// The EGL texture is owned by QtWayland's currentBuffer(). Only
-+		// advance() (called above, nowhere else) replaces that buffer, so
-+		// refetch the pointer when it reports a new one.
-+		if (updated || !m_texture)
-+			m_texture = bufRef.toOpenGLTexture();
- 	} else if (bufRef.bufferType() ==
- 		   QWaylandBufferRef::BufferType::
- 			   BufferType_SharedMemory) {
-@@ -478,7 +480,7 @@
- 
- void CwlView::onRedraw()
- {
--	m_cwlcompositor->triggerRender();
-+	m_cwlcompositor->triggerRender(output());
- 	if (isToplevel())
- 		;
- 	m_cwlcompositor->onToplevelDamaged(this);
+ 	inline CwlGesture *gesture()
+ 	{
+ 		return m_gesture;
+@@ -44,6 +48,7 @@
+ 	void renderView(CwlView *view);
+ 	void renderCursor();
+ 	void renderBackgroundBlur(const QRectF &target);
++	void setViewOpacity(double opacity);
+ 	void renderTitleBar(CwlView *view);
+ 	void renderBorder(CwlView *view, bool active);
+ 	bool ownsPointer(QWaylandOutput *output) const;
+@@ -55,6 +60,8 @@
+ 	QWaylandOutput *m_output = nullptr;
+ 	GLenum m_currentTarget;
+ 	BackgroundBlur *m_backgroundBlur = nullptr;
++	// Opacity the current view is drawn with
++	double m_viewOpacity = 1.0;
+ 	QOpenGLTexture *m_wallpaper = nullptr;
+ 	QOpenGLTexture *m_fallbackCursor = nullptr;
+ 	QOpenGLTexture *m_shapeCursors[6] = {};
+diff --git a/src/glwindow.cpp b/src/glwindow.cpp
+index a6b14ee..2fcc21b 100644
 --- a/src/glwindow.cpp
 +++ b/src/glwindow.cpp
-@@ -366,23 +366,6 @@
+@@ -169,16 +169,16 @@
+ 			appId = view->getAppId();
+ 
+ 		if (!primaryOutput)
+-			m_textureBlitter.setOpacity(1.0);
++			setViewOpacity(1.0);
+ 		else if (appId == "cutie-launcher")
+-			m_textureBlitter.setOpacity(
++			setViewOpacity(
+ 				1.0 -
+ 				(m_cwlcompositor->m_launcherView->getPosition()
+ 					 .y() *
+ 				 m_cwlcompositor->scaleFactor() / height()));
+ 		else if (view->isToplevel())
+ 			if (m_cwlcompositor->launcherPosition() > 0.0)
+-				m_textureBlitter.setOpacity(
++				setViewOpacity(
+ 					m_cwlcompositor->blur() *
+ 					m_cwlcompositor->m_launcherView
+ 						->getPosition()
+@@ -186,10 +186,9 @@
+ 					m_cwlcompositor->scaleFactor() /
+ 					height());
+ 			else
+-				m_textureBlitter.setOpacity(
+-					m_cwlcompositor->blur());
++				setViewOpacity(m_cwlcompositor->blur());
+ 		else
+-			m_textureBlitter.setOpacity(1.0);
++			setViewOpacity(1.0);
+ 
+ 		if (primaryOutput && m_cwlcompositor->launcherPosition() == 1.0 &&
+ 		    view->layer == CwlViewLayer::TOP)
+@@ -241,6 +240,12 @@
+ 	}
+ }
+ 
++void GlWindow::setViewOpacity(double opacity)
++{
++	m_viewOpacity = opacity;
++	m_textureBlitter.setOpacity(opacity);
++}
++
+ // Replaces what is on screen under `target` with a blurred copy of it. The
+ // view is drawn over that afterwards, so it has to be translucent to show it.
+ // The window size is the framebuffer size here, like in renderView().
+@@ -258,11 +263,15 @@
+ 		m_backgroundBlur->blur(region, size());
+ 
+ 	m_textureBlitter.bind(GL_TEXTURE_2D);
++	// Half a texel in: the texture can be bigger than the blurred part,
++	// and the filtering must not read the old pixels beyond its edges.
+ 	m_textureBlitter.blit(
+ 		blurred.texture,
+ 		QOpenGLTextureBlitter::targetTransform(region, viewport),
+ 		QOpenGLTextureBlitter::sourceTransform(
+-			QRect(QPoint(), blurred.area), blurred.textureSize,
++			QRectF(0.5, 0.5, blurred.area.width() - 1,
++			       blurred.area.height() - 1),
++			blurred.textureSize,
+ 			QOpenGLTextureBlitter::OriginBottomLeft));
+ 	// Back to what renderView() expects
+ 	m_textureBlitter.bind(m_currentTarget);
+@@ -414,7 +423,9 @@
  		m_cwlcompositor->setSurfaceScale(surface, outputScale);
  		QRectF targetRect(viewPosition * outputScale, viewSize * outputScale);
  
--		if (m_output != m_cwlcompositor->defaultOutput()) {
--			static QSet<QString> seen;
--			const QSize buf = surface->bufferSize();
--			const QString key = QString("%1 wl_surface#%2 buf %3x%4 bufScale %5 dest %6x%7 -> target %8x%9")
--				.arg(view->getAppId())
--				.arg(wl_resource_get_id(surface->resource()))
--				.arg(buf.width()).arg(buf.height())
--				.arg(surface->bufferScale())
--				.arg(viewSize.width()).arg(viewSize.height())
--				.arg(qRound(targetRect.width()))
--				.arg(qRound(targetRect.height()));
--			if (!seen.contains(key)) {
--				seen.insert(key);
--				qInfo() << "Cutie view blit:" << key;
--			}
--		}
--
+-		if (m_cwlcompositor->wantsBackgroundBlur(surface))
++		// Nothing to show for a view that is not visible (yet)
++		if (m_viewOpacity > 0.0 &&
++		    m_cwlcompositor->wantsBackgroundBlur(surface))
+ 			renderBackgroundBlur(targetRect);
+ 
  		QMatrix4x4 targetTransform =
- 			QOpenGLTextureBlitter::targetTransform(
- 				targetRect, QRect(QPoint(), size()));

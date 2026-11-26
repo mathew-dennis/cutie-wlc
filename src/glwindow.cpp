@@ -169,16 +169,16 @@ void GlWindow::paintGL()
 			appId = view->getAppId();
 
 		if (!primaryOutput)
-			m_textureBlitter.setOpacity(1.0);
+			setViewOpacity(1.0);
 		else if (appId == "cutie-launcher")
-			m_textureBlitter.setOpacity(
+			setViewOpacity(
 				1.0 -
 				(m_cwlcompositor->m_launcherView->getPosition()
 					 .y() *
 				 m_cwlcompositor->scaleFactor() / height()));
 		else if (view->isToplevel())
 			if (m_cwlcompositor->launcherPosition() > 0.0)
-				m_textureBlitter.setOpacity(
+				setViewOpacity(
 					m_cwlcompositor->blur() *
 					m_cwlcompositor->m_launcherView
 						->getPosition()
@@ -186,10 +186,9 @@ void GlWindow::paintGL()
 					m_cwlcompositor->scaleFactor() /
 					height());
 			else
-				m_textureBlitter.setOpacity(
-					m_cwlcompositor->blur());
+				setViewOpacity(m_cwlcompositor->blur());
 		else
-			m_textureBlitter.setOpacity(1.0);
+			setViewOpacity(1.0);
 
 		if (primaryOutput && m_cwlcompositor->launcherPosition() == 1.0 &&
 		    view->layer == CwlViewLayer::TOP)
@@ -241,6 +240,12 @@ void GlWindow::renderBorder(CwlView *view, bool active)
 	}
 }
 
+void GlWindow::setViewOpacity(double opacity)
+{
+	m_viewOpacity = opacity;
+	m_textureBlitter.setOpacity(opacity);
+}
+
 // Replaces what is on screen under `target` with a blurred copy of it. The
 // view is drawn over that afterwards, so it has to be translucent to show it.
 // The window size is the framebuffer size here, like in renderView().
@@ -258,11 +263,15 @@ void GlWindow::renderBackgroundBlur(const QRectF &target)
 		m_backgroundBlur->blur(region, size());
 
 	m_textureBlitter.bind(GL_TEXTURE_2D);
+	// Half a texel in: the texture can be bigger than the blurred part,
+	// and the filtering must not read the old pixels beyond its edges.
 	m_textureBlitter.blit(
 		blurred.texture,
 		QOpenGLTextureBlitter::targetTransform(region, viewport),
 		QOpenGLTextureBlitter::sourceTransform(
-			QRect(QPoint(), blurred.area), blurred.textureSize,
+			QRectF(0.5, 0.5, blurred.area.width() - 1,
+			       blurred.area.height() - 1),
+			blurred.textureSize,
 			QOpenGLTextureBlitter::OriginBottomLeft));
 	// Back to what renderView() expects
 	m_textureBlitter.bind(m_currentTarget);
@@ -414,7 +423,9 @@ void GlWindow::renderView(CwlView *view)
 		m_cwlcompositor->setSurfaceScale(surface, outputScale);
 		QRectF targetRect(viewPosition * outputScale, viewSize * outputScale);
 
-		if (m_cwlcompositor->wantsBackgroundBlur(surface))
+		// Nothing to show for a view that is not visible (yet)
+		if (m_viewOpacity > 0.0 &&
+		    m_cwlcompositor->wantsBackgroundBlur(surface))
 			renderBackgroundBlur(targetRect);
 
 		QMatrix4x4 targetTransform =

@@ -8,6 +8,8 @@ static const int LEVELS = 3;
 // How far each pass reaches, in texels. More blurs wider, too much shows as
 // dots. 1 is the plain dual Kawase filter.
 static const float OFFSET = 2.0f;
+// Lets tile based GPUs skip loading the old pixels of a level
+static const GLenum DISCARD = GL_COLOR_ATTACHMENT0;
 
 // One triangle that covers the whole viewport; uv goes from 0 to 1 over it.
 // clang-format off
@@ -123,10 +125,21 @@ void BackgroundBlur::resize(const QSize &framebufferSize)
 	qDeleteAll(m_levels);
 	m_levels.clear();
 	for (int i = 0; i < LEVELS; ++i) {
+		// Rounded up like the areas in blur(), or a full screen blur
+		// would not fit when the size is not a multiple of 8
 		const int shift = i + 1;
-		m_levels << new QOpenGLFramebufferObject(
-			QSize(qMax(1, framebufferSize.width() >> shift),
-			      qMax(1, framebufferSize.height() >> shift)));
+		const int round = (1 << shift) - 1;
+		QOpenGLFramebufferObject *level = new QOpenGLFramebufferObject(
+			QSize(qMax(1, (framebufferSize.width() + round) >> shift),
+			      qMax(1, (framebufferSize.height() + round) >>
+					      shift)));
+		// Qt makes these textures GL_NEAREST, the filters need linear
+		m_gl.glBindTexture(GL_TEXTURE_2D, level->texture());
+		m_gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+				     GL_LINEAR);
+		m_gl.glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+				     GL_LINEAR);
+		m_levels << level;
 	}
 }
 
@@ -137,6 +150,7 @@ void BackgroundBlur::pass(QOpenGLShaderProgram &program, int from, int to,
 	const QSize fromSize = m_levels[from]->size();
 
 	m_levels[to]->bind();
+	m_gl.glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 1, &DISCARD);
 	m_gl.glViewport(0, 0, toArea.width(), toArea.height());
 
 	program.bind();
@@ -177,6 +191,7 @@ BackgroundBlur::Result BackgroundBlur::blur(const QRect &region,
 		GL_READ_FRAMEBUFFER,
 		QOpenGLContext::currentContext()->defaultFramebufferObject());
 	m_gl.glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_levels[0]->handle());
+	m_gl.glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 1, &DISCARD);
 	m_gl.glBlitFramebuffer(region.left(), bottom,
 			       region.left() + region.width(),
 			       bottom + region.height(), 0, 0, areas[0].width(),
