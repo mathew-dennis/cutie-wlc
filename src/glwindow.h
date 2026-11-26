@@ -6,6 +6,7 @@
 
 #include <cutie-wlc.h>
 #include <gesture.h>
+#include <blur.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -13,6 +14,7 @@ class GlWindow : public QOpenGLWindow {
 	Q_OBJECT
     public:
 	GlWindow();
+	~GlWindow() override;
 	void setCompositor(CwlCompositor *cwlcompositor);
 	void setOutput(QWaylandOutput *output);
 	QWaylandOutput *output() const;
@@ -41,6 +43,7 @@ class GlWindow : public QOpenGLWindow {
     private:
 	void renderView(CwlView *view);
 	void renderCursor();
+	void renderBackgroundBlur(const QRectF &target);
 	void renderTitleBar(CwlView *view);
 	void renderBorder(CwlView *view, bool active);
 	bool ownsPointer(QWaylandOutput *output) const;
@@ -51,6 +54,7 @@ class GlWindow : public QOpenGLWindow {
 	QOpenGLTextureBlitter m_textureBlitter;
 	QWaylandOutput *m_output = nullptr;
 	GLenum m_currentTarget;
+	BackgroundBlur *m_backgroundBlur = nullptr;
 	QOpenGLTexture *m_wallpaper = nullptr;
 	QOpenGLTexture *m_fallbackCursor = nullptr;
 	QOpenGLTexture *m_shapeCursors[6] = {};

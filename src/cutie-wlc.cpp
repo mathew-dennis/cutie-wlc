@@ -6,6 +6,7 @@
 #include <foreign-toplevel-management.h>
 #include <input-method-v2.h>
 #include <fractional-scale-v1.h>
+#include <background-effect-v1.h>
 #include <decoration.h>
 
 #include <QtWaylandCompositor/QWaylandSeat>
@@ -157,6 +158,7 @@ void CwlCompositor::create()
 	// through subsurfaces, which are not rendered here. Without it Qt clients
 	// fall back to set_buffer_scale(ceil(scale)), exact for integer scales.
 	m_fractionalScaleManager = new FractionalScaleManagerV1(this);
+	m_backgroundEffectManager = new BackgroundEffectManagerV1(this);
 
 	m_created = true;
 	for (QScreen *screen : qGuiApp->screens())
@@ -1447,6 +1449,12 @@ void CwlCompositor::setSurfaceScale(QWaylandSurface *surface, int scale)
 {
 	if (m_fractionalScaleManager)
 		m_fractionalScaleManager->setSurfaceScale(surface, scale);
+}
+
+bool CwlCompositor::wantsBackgroundBlur(QWaylandSurface *surface) const
+{
+	return m_backgroundEffectManager &&
+	       m_backgroundEffectManager->hasBlur(surface);
 }
 
 void CwlCompositor::setScaleFactor(int scale)

@@ -9,7 +9,8 @@ set(CWL_SOURCES
 		workspace.cpp
 		glwindow.cpp
 		gesture.cpp
-		decoration.cpp)
+		decoration.cpp
+		blur.cpp)
 
 set(CWL_HEADERS
 		view.h
@@ -17,7 +18,8 @@ set(CWL_HEADERS
 		workspace.h
 		glwindow.h
 		gesture.h
-		decoration.h)
+		decoration.h
+		blur.h)
 
 set(QML_RESOURCES)
 
@@ -43,4 +45,5 @@ ${PROJECT_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/wlr-foreign-toplevel-management-unstable-v1.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/input-method-unstable-v2.xml
         ${CMAKE_CURRENT_SOURCE_DIR}/protocols/fractional-scale-v1.xml
+        ${CMAKE_CURRENT_SOURCE_DIR}/protocols/ext-background-effect-v1.xml
 )

@@ -26,6 +26,7 @@ class ForeignToplevelManagerV1;
 class ForeignToplevelHandleV1;
 class InputMethodManagerV2;
 class FractionalScaleManagerV1;
+class BackgroundEffectManagerV1;
 
 class CwlCompositor : public QWaylandCompositor {
 	Q_OBJECT
@@ -92,6 +93,8 @@ class CwlCompositor : public QWaylandCompositor {
 	int scaleFactor();
 	void setScaleFactor(int scale);
 	void setSurfaceScale(QWaylandSurface *surface, int scale);
+	// The client asked for the background behind the surface to be blurred
+	bool wantsBackgroundBlur(QWaylandSurface *surface) const;
 
 	CwlView *getTopPanel();
 	GlWindow *glWindow();
@@ -161,6 +164,7 @@ class CwlCompositor : public QWaylandCompositor {
 	OutputManagerV1 *m_outputManager = nullptr;
 	OutputPowerManagerV1 *m_outputPowerManager = nullptr;
 	FractionalScaleManagerV1 *m_fractionalScaleManager = nullptr;
+	BackgroundEffectManagerV1 *m_backgroundEffectManager = nullptr;
 	ScreencopyManagerV1 *m_screencopyManager = nullptr;
 	ForeignToplevelManagerV1 *m_foreignTlManagerV1 = nullptr;
 	QWaylandOutput *m_output = nullptr;

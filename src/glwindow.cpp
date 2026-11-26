@@ -24,6 +24,14 @@ GlWindow::GlWindow()
 	m_displayOff = false;
 }
 
+GlWindow::~GlWindow()
+{
+	// The blur textures are freed with this window's GL context
+	makeCurrent();
+	delete m_backgroundBlur;
+	doneCurrent();
+}
+
 void GlWindow::setCompositor(CwlCompositor *cwlcompositor)
 {
 	m_cwlcompositor = cwlcompositor;
@@ -80,6 +88,7 @@ void GlWindow::setDisplayOff(bool displayOff)
 void GlWindow::initializeGL()
 {
 	m_textureBlitter.create();
+	m_backgroundBlur = new BackgroundBlur;
 
 	// Arrow used when no client cursor surface is set.
 	QImage arrow(24, 24, QImage::Format_ARGB32);
@@ -232,6 +241,33 @@ void GlWindow::renderBorder(CwlView *view, bool active)
 	}
 }
 
+// Replaces what is on screen under `target` with a blurred copy of it. The
+// view is drawn over that afterwards, so it has to be translucent to show it.
+// The window size is the framebuffer size here, like in renderView().
+void GlWindow::renderBackgroundBlur(const QRectF &target)
+{
+	if (!m_backgroundBlur || !m_backgroundBlur->isValid())
+		return;
+	const QRect viewport(QPoint(), size());
+	const QRect region = target.toAlignedRect() & viewport;
+	if (region.isEmpty())
+		return;
+
+	m_textureBlitter.release();
+	const BackgroundBlur::Result blurred =
+		m_backgroundBlur->blur(region, size());
+
+	m_textureBlitter.bind(GL_TEXTURE_2D);
+	m_textureBlitter.blit(
+		blurred.texture,
+		QOpenGLTextureBlitter::targetTransform(region, viewport),
+		QOpenGLTextureBlitter::sourceTransform(
+			QRect(QPoint(), blurred.area), blurred.textureSize,
+			QOpenGLTextureBlitter::OriginBottomLeft));
+	// Back to what renderView() expects
+	m_textureBlitter.bind(m_currentTarget);
+}
+
 void GlWindow::renderTitleBar(CwlView *view)
 {
 	const int outputScale = qMax(1, m_output->scaleFactor());
@@ -377,6 +413,9 @@ void GlWindow::renderView(CwlView *view)
 		const int outputScale = qMax(1, m_output->scaleFactor());
 		m_cwlcompositor->setSurfaceScale(surface, outputScale);
 		QRectF targetRect(viewPosition * outputScale, viewSize * outputScale);
+
+		if (m_cwlcompositor->wantsBackgroundBlur(surface))
+			renderBackgroundBlur(targetRect);
 
 		QMatrix4x4 targetTransform =
 			QOpenGLTextureBlitter::targetTransform(
